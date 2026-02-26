@@ -9,27 +9,27 @@ Currently optimized for Apple Silicon (M-series / ARM NEON) via Carry-Less Multi
 ## Features
 - **Zero-Decode Architecture:** Avoids full deserialization until you access a specific field.
 - **SIMD Optimized:** Uses architecture-specific intrinsics (like ARM NEON `PMULL`) to track structural tokens.
-- **Schema JIT Parsing:** With `kowito-json-derive`, bind JSON instantly into typed Rust structs at 5+ GiB/s.
+- **Schema JIT Parsing:** With `kowito-json-derive`, bind JSON instantly into typed Rust structs at 5,500+ MiB/s.
 - **Hardware-Aware Memory Access:** Pre-fetches byte chunks into L1 cache for zero CPU stalling.
 
 ## Benchmarks
 
 Parsed on Apple Silicon M4 (NEON PMULL optimized). Measurements taken using `criterion` on a 10MB massive JSON payload.
 
-| Parser | Throughput (GiB/s) | Relative Speed (vs `serde_json`) |
+| Parser | Throughput (MiB/s) | Relative Speed (vs `serde_json`) |
 | :--- | :--- | :--- |
-| **kowito-json** | **~5.50 GiB/s** | **~23x Faster** |
-| `sonic-rs` | ~1.31 GiB/s | ~5.4x Faster |
-| `simd-json` | ~0.27 GiB/s | ~1.1x Faster |
-| `serde_json` | ~0.24 GiB/s | 1x (Baseline) |
+| **kowito-json** | **~5,632 MiB/s** | **~23x Faster** |
+| `sonic-rs` | ~1,341 MiB/s | ~5.4x Faster |
+| `simd-json` | ~276 MiB/s | ~1.1x Faster |
+| `serde_json` | ~245 MiB/s | 1x (Baseline) |
 
-### Performance Visualization (GiB/s)
+### Performance Visualization (MiB/s)
 
 ```text
-serde_json  [■] 0.24
-simd-json   [■] 0.27
-sonic-rs    [■■■■■] 1.31
-kowito-json [■■■■■■■■■■■■■■■■■■■■■■■] 5.50
+serde_json  [■] 245
+simd-json   [■] 276
+sonic-rs    [■■■■■] 1341
+kowito-json [■■■■■■■■■■■■■■■■■■■■■■■] 5632
 ```
 
 ## Installation
