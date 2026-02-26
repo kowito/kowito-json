@@ -1,15 +1,15 @@
-# kjson
+# kowito-json
 
-**The fastest JSON parser on Earth.**
+**A high-performance zero-decode JSON parser.**
 
-`kjson` is a cutting-edge JSON parsing and binding library for Rust. Leveraging state-of-the-art SIMD instructions, hardware prefetching, and a "Zero-Decode" philosophy, it parses JSON by completely avoiding scalar loops and allocations until absolutely necessary.
+`kowito-json` is a highly-optimized JSON parsing and binding library for Rust. Leveraging state-of-the-art SIMD instructions, hardware prefetching, and a "Zero-Decode" philosophy, it parses JSON by completely avoiding scalar loops and allocations until absolutely necessary.
 
-Currently optimized for Apple Silicon (M-series / ARM NEON) via Carry-Less Multiplication (`PMULL`), `kjson` achieves over 5.5 GiB/s sustained parsing speeds—over 4x faster than `sonic-rs`.
+Currently optimized for Apple Silicon (M-series / ARM NEON) via Carry-Less Multiplication (`PMULL`), `kowito-json` is capable of handling over 5.5 GiB/s sustained parsing speeds.
 
 ## Features
 - **Zero-Decode Architecture:** Avoids full deserialization until you access a specific field.
 - **SIMD Optimized:** Uses architecture-specific intrinsics (like ARM NEON `PMULL`) to track structural tokens.
-- **Schema JIT Parsing:** With `kjson-derive`, bind JSON instantly into typed Rust structs at 5+ GiB/s.
+- **Schema JIT Parsing:** With `kowito-json-derive`, bind JSON instantly into typed Rust structs at 5+ GiB/s.
 - **Hardware-Aware Memory Access:** Pre-fetches byte chunks into L1 cache for zero CPU stalling.
 
 ## Installation
@@ -18,15 +18,15 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-kjson = "0.2.0"
-kjson-derive = "0.2.0"
+kowito-json = "0.2.0"
+kowito-json-derive = "0.2.0"
 ```
 
 ## Quick Start
 
 ```rust
-use kjson::KowitoView;
-use kjson_derive::from_kview;
+use kowito_json::KowitoView;
+use kowito_json_derive::from_kview;
 
 #[derive(Debug)]
 struct User {
@@ -55,7 +55,7 @@ fn main() {
 ```
 
 ## Under the Hood
-Most parsers build an AST or evaluate string quotes using branching logic. `kjson` uses SIMD Carry-Less Multiplication (Polynomial Math) to trace out string blocks parity in a single CPU cycle without branching. This mathematically perfect parsing removes branch mispredictions, maximizing the throughput of modem superscalar processors.
+Most parsers build an AST or evaluate string quotes using branching logic. `kowito-json` uses SIMD Carry-Less Multiplication (Polynomial Math) to trace out string blocks parity in a single CPU cycle without branching. This mathematically perfect parsing removes branch mispredictions, maximizing the throughput of modem superscalar processors.
 
 ## License
 

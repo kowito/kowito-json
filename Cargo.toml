@@ -3,7 +3,7 @@ name = "kowito-json"
 version = "0.2.0"
 edition = "2024"
 authors = ["Kowito <hi@kowito.com>"]
-description = "The fastest JSON parser on Earth. Zero-decode, SIMD optimized."
+description = "A high-performance zero-decode JSON parser using SIMD, ARM NEON PMULL, and schema JIT binding."
 repository = "https://github.com/Kowito/kowito-json"
 license = "MIT"
 [workspace]
