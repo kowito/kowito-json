@@ -1,6 +1,6 @@
-use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
-use std::hint::black_box;
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use kowito_json_derive::Kjson;
+use std::hint::black_box;
 
 // ---------------------------------------------------------------------------
 // Payload A – tiny HTTP-style response (3 fields)
@@ -133,10 +133,10 @@ macro_rules! bench_trio {
 // ---------------------------------------------------------------------------
 fn bench_large_string(c: &mut Criterion) {
     let mut group = c.benchmark_group("Large-String Serialization (SIMD)");
-    
+
     // 10 KB of safe characters to hit the SIMD fast-path
     bench_trio!(group, "10kb_safe", long_string_payload(10_000));
-    
+
     group.finish();
 }
 
@@ -146,8 +146,8 @@ fn bench_large_string(c: &mut Criterion) {
 fn bench_micro(c: &mut Criterion) {
     let mut group = c.benchmark_group("Micro-Payload Serialization");
 
-    bench_trio!(group, "tiny_3fields",    tiny_payload());
-    bench_trio!(group, "medium_7fields",  medium_payload());
+    bench_trio!(group, "tiny_3fields", tiny_payload());
+    bench_trio!(group, "medium_7fields", medium_payload());
     bench_trio!(group, "numeric_8fields", numeric_payload());
 
     group.finish();
@@ -175,7 +175,9 @@ fn bench_hot_loop(c: &mut Criterion) {
 
     let mut buf = Vec::<u8>::with_capacity(256 * N);
     // Measure "output size per batch" for throughput
-    for item in &items { item.to_kbytes(&mut buf); }
+    for item in &items {
+        item.to_kbytes(&mut buf);
+    }
     group.throughput(Throughput::Bytes(buf.len() as u64));
     buf.clear();
 
@@ -214,4 +216,3 @@ fn bench_hot_loop(c: &mut Criterion) {
 
 criterion_group!(benches, bench_micro, bench_hot_loop, bench_large_string);
 criterion_main!(benches);
-

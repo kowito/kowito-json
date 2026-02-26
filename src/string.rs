@@ -40,14 +40,38 @@ impl<'a> KString<'a> {
                 if self.raw[i] == b'\\' {
                     if i + 1 < self.raw.len() {
                         match self.raw[i + 1] {
-                            b'"' => { decoded.push('"'); i += 2; },
-                            b'\\' => { decoded.push('\\'); i += 2; },
-                            b'/' => { decoded.push('/'); i += 2; },
-                            b'b' => { decoded.push('\x08'); i += 2; },
-                            b'f' => { decoded.push('\x0C'); i += 2; },
-                            b'n' => { decoded.push('\n'); i += 2; },
-                            b'r' => { decoded.push('\r'); i += 2; },
-                            b't' => { decoded.push('\t'); i += 2; },
+                            b'"' => {
+                                decoded.push('"');
+                                i += 2;
+                            }
+                            b'\\' => {
+                                decoded.push('\\');
+                                i += 2;
+                            }
+                            b'/' => {
+                                decoded.push('/');
+                                i += 2;
+                            }
+                            b'b' => {
+                                decoded.push('\x08');
+                                i += 2;
+                            }
+                            b'f' => {
+                                decoded.push('\x0C');
+                                i += 2;
+                            }
+                            b'n' => {
+                                decoded.push('\n');
+                                i += 2;
+                            }
+                            b'r' => {
+                                decoded.push('\r');
+                                i += 2;
+                            }
+                            b't' => {
+                                decoded.push('\t');
+                                i += 2;
+                            }
                             b'u' => {
                                 // Unicode escape parsing would go here.
                                 // Simplified for the baseline.
@@ -104,7 +128,12 @@ mod tests {
         let raw = br#"\"\/\b\f\n\r\t\\"#;
         let s = KString::new(raw, true);
         assert!(s.has_escapes());
-        assert_eq!(s.decode(), "\"/\\x08\\x0C\n\r\t\\".replace("\\x08", "\x08").replace("\\x0C", "\x0C"));
+        assert_eq!(
+            s.decode(),
+            "\"/\\x08\\x0C\n\r\t\\"
+                .replace("\\x08", "\x08")
+                .replace("\\x0C", "\x0C")
+        );
     }
 
     #[test]
@@ -125,4 +154,3 @@ mod tests {
         assert_eq!(s.decode(), "hello");
     }
 }
-

@@ -1,6 +1,5 @@
 /// Implement a SIMD block processor (e.g., using pulp) to find structural characters ({, }, :, ,, ").
 /// Include whitespace skippers and bitmask index generation for the tape.
-
 pub struct Scanner<'a> {
     input: &'a [u8],
 }
@@ -28,7 +27,7 @@ impl<'a> Scanner<'a> {
             unsafe {
                 std::intrinsics::prefetch_read_data::<u8, 3>(bytes.as_ptr().add(i + 128));
             }
-            
+
             let chunk = u8x32::from_slice(&bytes[i..]);
 
             if in_string {
@@ -80,7 +79,7 @@ impl<'a> Scanner<'a> {
                     let tz = structurals.trailing_zeros();
                     structurals &= structurals - 1; // clear lowest set bit
                     let pos = i + tz as usize;
-                    
+
                     if bytes[pos] == b'"' {
                         in_string = true;
                         if tape_idx < tape.len() {
@@ -160,7 +159,7 @@ mod tests {
         let scanner = Scanner::new(json);
         let mut tape = vec![0; 10];
         let count = scanner.scan(&mut tape);
-        
+
         // Expected structural characters:
         // '{' at 0
         // '"' at 1 (start string)
@@ -179,7 +178,7 @@ mod tests {
         let scanner = Scanner::new(json);
         let mut tape = vec![0; 10];
         let count = scanner.scan(&mut tape);
-        
+
         // Expected structural characters:
         // '{' at 0
         // '"' at 1 (start string)
@@ -199,7 +198,7 @@ mod tests {
         let scanner = Scanner::new(json);
         let mut tape = vec![0; 10];
         let count = scanner.scan(&mut tape);
-        
+
         // '[' at 0, ',' at 2, ',' at 8, ']' at 14
         assert_eq!(count, 4);
         assert_eq!(&tape[..count], &[0, 2, 8, 14]);
@@ -210,11 +209,11 @@ mod tests {
         let json = b"[1,2,3,4,5]";
         let scanner = Scanner::new(json);
         // tape too small
-        let mut tape = vec![0; 2]; 
+        let mut tape = vec![0; 2];
         let count = scanner.scan(&mut tape);
-        
+
         // Scanner should not panic, and count should not exceed tape.len()
-        assert_eq!(count, 2); 
+        assert_eq!(count, 2);
     }
 
     #[test]
@@ -223,7 +222,7 @@ mod tests {
         let scanner = Scanner::new(json);
         let mut tape = vec![0; 10];
         let count = scanner.scan(&mut tape);
-        
+
         // Expected structural characters:
         // '[' at 0
         // ',' at 4
@@ -240,7 +239,7 @@ mod tests {
         let scanner = Scanner::new(json);
         let mut tape = vec![0; 10];
         let count = scanner.scan(&mut tape);
-        
+
         // Should capture:
         // '{' at 0
         // '"' at 1
@@ -260,4 +259,3 @@ mod tests {
         assert_eq!(count, 0); // No structural characters
     }
 }
-

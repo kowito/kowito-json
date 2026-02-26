@@ -1,8 +1,8 @@
-pub mod generic;
+pub mod amx;
 pub mod avx2;
+pub mod generic;
 pub mod neon;
 pub mod sve2;
-pub mod amx;
 
 pub struct Scanner<'a> {
     input: &'a [u8],
@@ -31,14 +31,18 @@ impl<'a> Scanner<'a> {
             // In a production Apple Silicon (M4+) environment, we would detect SVE/SVE2
             // For now, NEON is always available on AArch64.
             // SVE2 will be wired up here when `stdarch_aarch64_sve` stabilizes in rustc.
-            
+
             // Safety: NEON is guaranteed on aarch64.
             return unsafe { neon::scan_neon(self.input, tape) };
         }
 
         // Fallback to pure portable SIMD (Fast, but without carry-less bitmanipulation)
-        let generic_scanner = generic::Scanner::new(self.input);
-        generic_scanner.scan(tape)
+        // Reachable on non-aarch64 and non-x86_64_with_avx2 architectures
+        #[allow(unreachable_code)]
+        {
+            let generic_scanner = generic::Scanner::new(self.input);
+            generic_scanner.scan(tape)
+        }
     }
 }
 
@@ -52,7 +56,7 @@ mod tests {
         let scanner = Scanner::new(json);
         let mut tape = vec![0; 10];
         let count = scanner.scan(&mut tape);
-        
+
         assert_eq!(count, 7);
         assert_eq!(&tape[..count], &[0, 1, 5, 6, 7, 13, 14]);
     }
@@ -63,7 +67,7 @@ mod tests {
         let scanner = Scanner::new(json);
         let mut tape = vec![0; 10];
         let count = scanner.scan(&mut tape);
-        
+
         assert_eq!(count, 7);
         assert_eq!(&tape[..count], &[0, 1, 5, 6, 7, 15, 16]);
     }
@@ -74,7 +78,7 @@ mod tests {
         let scanner = Scanner::new(json);
         let mut tape = vec![0; 10];
         let count = scanner.scan(&mut tape);
-        
+
         assert_eq!(count, 4);
         assert_eq!(&tape[..count], &[0, 2, 8, 14]);
     }

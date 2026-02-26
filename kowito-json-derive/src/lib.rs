@@ -1,6 +1,6 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields, Type};
+use syn::{Data, DataStruct, DeriveInput, Fields, Type, parse_macro_input};
 
 // A simple compile-time hash function to match the FxHash style
 fn compute_hash(s: &str) -> u64 {
@@ -20,7 +20,10 @@ fn is_str_like(ty: &Type) -> bool {
     match ty {
         Type::Path(tp) => {
             let seg = tp.path.segments.last().map(|s| s.ident.to_string());
-            matches!(seg.as_deref(), Some("String" | "str" | "Cow" | "KString" | "Box"))
+            matches!(
+                seg.as_deref(),
+                Some("String" | "str" | "Cow" | "KString" | "Box")
+            )
         }
         Type::Reference(r) => is_str_like(&r.elem),
         _ => false,
@@ -49,78 +52,76 @@ pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
     // dynamic_cap = rough estimate for values
     let mut static_cap: usize = 2; // opening `{` + closing `}`
 
-    if let Data::Struct(data_struct) = &input.data {
-        if let Fields::Named(fields_named) = &data_struct.fields {
-            let total_fields = fields_named.named.len();
-            for (i, field) in fields_named.named.iter().enumerate() {
-                let field_ident = field.ident.as_ref().unwrap();
-                let field_name_str = field_ident.to_string();
-                let field_hash = compute_hash(&field_name_str);
+    if let Data::Struct(DataStruct {
+        fields: Fields::Named(fields_named),
+        ..
+    }) = &input.data
+    {
+        let total_fields = fields_named.named.len();
+        for (i, field) in fields_named.named.iter().enumerate() {
+            let field_ident = field.ident.as_ref().unwrap();
+            let field_name_str = field_ident.to_string();
+            let field_hash = compute_hash(&field_name_str);
 
-                generated_fields.push(quote! {
-                    #field_hash => {
-                        // Phase 3: Unrolled SIMD bypass logic specializes here per field type!
-                    }
-                });
-
-                fields_init.push(quote! {
-                    #field_ident: Default::default()
-                });
-
-                // ----------------------------------------------------------------
-                // Compile-time structural template generation
-                //
-                // Each field contributes a *static* key prefix slice that is
-                // interleaved with the *dynamic* value writes.  All prefix bytes
-                // are known at macro-expansion time so they compile down to a
-                // direct `memcpy` from a read-only data segment.
-                // ----------------------------------------------------------------
-                let prefix = if i == 0 {
-                    format!("{{\"{}\":", field_name_str)   // opens the object
-                } else {
-                    format!(",\"{}\":", field_name_str)
-                };
-
-                // Accumulate static capacity (prefix bytes are known at expand time)
-                static_cap += prefix.len();
- 
-                if is_str_like(&field.ty) {
-                    dynamic_cap_stmts.push(quote! {
-                        self.#field_ident.len() * 6 + 2
-                    });
-                } else {
-                    let cap = value_capacity_estimate(&field.ty);
-                    dynamic_cap_stmts.push(quote! { #cap });
+            generated_fields.push(quote! {
+                #field_hash => {
+                    // Phase 3: Unrolled SIMD bypass logic specializes here per field type!
                 }
+            });
 
-                let prefix_bytes = syn::LitByteStr::new(
-                    prefix.as_bytes(),
-                    proc_macro2::Span::call_site(),
-                );
-                let is_last = i == total_fields - 1;
+            fields_init.push(quote! {
+                #field_ident: Default::default()
+            });
 
+            // ----------------------------------------------------------------
+            // Compile-time structural template generation
+            //
+            // Each field contributes a *static* key prefix slice that is
+            // interleaved with the *dynamic* value writes.  All prefix bytes
+            // are known at macro-expansion time so they compile down to a
+            // direct `memcpy` from a read-only data segment.
+            // ----------------------------------------------------------------
+            let prefix = if i == 0 {
+                format!("{{\"{}\":", field_name_str) // opens the object
+            } else {
+                format!(",\"{}\":", field_name_str)
+            };
+
+            // Accumulate static capacity (prefix bytes are known at expand time)
+            static_cap += prefix.len();
+
+            if is_str_like(&field.ty) {
+                dynamic_cap_stmts.push(quote! {
+                    self.#field_ident.len() * 6 + 2
+                });
+            } else {
+                let cap = value_capacity_estimate(&field.ty);
+                dynamic_cap_stmts.push(quote! { #cap });
+            }
+
+            let prefix_bytes =
+                syn::LitByteStr::new(prefix.as_bytes(), proc_macro2::Span::call_site());
+            let is_last = i == total_fields - 1;
+
+            serialize_stmts.push(quote! {
+                {
+                    std::ptr::copy_nonoverlapping(#prefix_bytes.as_ptr(), curr, #prefix_bytes.len());
+                    curr = curr.add(#prefix_bytes.len());
+                    curr = kowito_json::serialize::write_value_raw(&self.#field_ident, curr);
+                    curr
+                }
+            });
+
+            if is_last {
                 serialize_stmts.push(quote! {
                     {
-                        std::ptr::copy_nonoverlapping(#prefix_bytes.as_ptr(), curr, #prefix_bytes.len());
-                        curr = curr.add(#prefix_bytes.len());
-                        curr = kowito_json::serialize::write_value_raw(&self.#field_ident, curr);
-                        curr
+                        *curr = b'}';
+                        curr.add(1)
                     }
                 });
-
-                if is_last {
-                    serialize_stmts.push(quote! { 
-                        {
-                            *curr = b'}';
-                            curr.add(1)
-                        }
-                    });
-                }
-
             }
         }
     }
-
 
     let expanded = quote! {
         impl #name {

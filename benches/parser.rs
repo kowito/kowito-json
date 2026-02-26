@@ -1,13 +1,15 @@
-use criterion::{criterion_group, criterion_main, Criterion, Throughput};
-use std::hint::black_box;
-use kowito_json::scanner::Scanner;
+use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use kowito_json::arena::Scratchpad;
+use kowito_json::scanner::Scanner;
+use std::hint::black_box;
 
 fn generate_massive_json() -> String {
     let mut s = String::with_capacity(10 * 1024 * 1024);
     s.push('[');
     for i in 0..100_000 {
-        if i > 0 { s.push(','); }
+        if i > 0 {
+            s.push(',');
+        }
         s.push_str(r#"{"id":"#);
         s.push_str(&i.to_string());
         s.push_str(r#","name":"user_"#);
@@ -20,10 +22,10 @@ fn generate_massive_json() -> String {
 
 fn bench_parsers(c: &mut Criterion) {
     let mut group = c.benchmark_group("Massive JSON Parsers");
-    
+
     let json_string = generate_massive_json();
     let json_bytes = json_string.as_bytes();
-    
+
     // Set throughput so criterion shows MB/s
     group.throughput(Throughput::Bytes(json_bytes.len() as u64));
     group.sample_size(100);
@@ -57,7 +59,7 @@ fn bench_parsers(c: &mut Criterion) {
 
     // 4. KJSON / Kowito-JSON (The World Record Contender)
     // We pre-allocate the scratchpad just like real-world server thread-locals
-    let mut scratchpad = Scratchpad::new(10_000_000); 
+    let mut scratchpad = Scratchpad::new(10_000_000);
 
     group.bench_function("kowito_json_scanner_only", |b| {
         b.iter(|| {
@@ -74,11 +76,11 @@ fn bench_parsers(c: &mut Criterion) {
             let scanner = Scanner::new(json_bytes);
             let tape = scratchpad.get_mut_tape();
             let _count = scanner.scan(tape);
-            
+
             // In a real implementation we would loop over the array elements
             // For this benchmark we simulate extracting the first object
             let view = kowito_json::KView::new(json_bytes, tape);
-            
+
             // This is the Magic: Instantiating the struct immediately without
             // touching the unused strings or traversing the full tree.
             let user = kowito_json::FastUser::from_kview(&view);

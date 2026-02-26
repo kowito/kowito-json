@@ -1,5 +1,5 @@
-use std::vec::Vec;
 use std::string::String;
+use std::vec::Vec;
 
 // ---------------------------------------------------------------------------
 // Compile-time escape lookup table
@@ -13,18 +13,20 @@ const fn build_escape_table() -> [u8; 256] {
     let mut i = 0u8;
     // We use a while loop because for-loops aren't stable in const fn yet
     loop {
-        if i >= 0x20 { break; }
+        if i >= 0x20 {
+            break;
+        }
         t[i as usize] = b'u'; // generic \u00XX fallback
         i += 1;
     }
     // Overwrite the named ones with their short escape letter
-    t[b'"'  as usize] = b'"';
+    t[b'"' as usize] = b'"';
     t[b'\\' as usize] = b'\\';
     t[b'\n' as usize] = b'n';
     t[b'\r' as usize] = b'r';
     t[b'\t' as usize] = b't';
-    t[0x08]           = b'b'; // backspace
-    t[0x0C]           = b'f'; // form-feed
+    t[0x08] = b'b'; // backspace
+    t[0x0C] = b'f'; // form-feed
     t
 }
 
@@ -39,11 +41,11 @@ pub static ESCAPE_TABLE: [u8; 256] = build_escape_table();
 #[target_feature(enable = "neon")]
 unsafe fn find_escape_neon_x4(ptr: *const u8) -> u16 {
     use core::arch::aarch64::*;
-    
-    let d0 = vld1q_u8(ptr);
-    let d1 = vld1q_u8(ptr.add(16));
-    let d2 = vld1q_u8(ptr.add(32));
-    let d3 = vld1q_u8(ptr.add(48));
+
+    let d0 = unsafe { vld1q_u8(ptr) };
+    let d1 = unsafe { vld1q_u8(ptr.add(16)) };
+    let d2 = unsafe { vld1q_u8(ptr.add(32)) };
+    let d3 = unsafe { vld1q_u8(ptr.add(48)) };
 
     let q = vdupq_n_u8(b'"');
     let b = vdupq_n_u8(b'\\');
@@ -62,11 +64,11 @@ unsafe fn find_escape_neon_x4(ptr: *const u8) -> u16 {
 #[target_feature(enable = "neon")]
 unsafe fn find_escape_neon(ptr: *const u8) -> u16 {
     use core::arch::aarch64::*;
-    let data = vld1q_u8(ptr);
+    let data = unsafe { vld1q_u8(ptr) };
     let quotes = vceqq_u8(data, vdupq_n_u8(b'"'));
     let backslashes = vceqq_u8(data, vdupq_n_u8(b'\\'));
     let controls = vcltq_u8(data, vdupq_n_u8(0x20));
-    
+
     let mask = vorrq_u8(quotes, vorrq_u8(backslashes, controls));
     vmaxvq_u8(mask) as u16
 }
@@ -75,21 +77,36 @@ unsafe fn find_escape_neon(ptr: *const u8) -> u16 {
 #[target_feature(enable = "avx2")]
 unsafe fn find_escape_avx2_x4(ptr: *const u8) -> u32 {
     use core::arch::x86_64::*;
-    let d0 = _mm256_loadu_si256(ptr as *const __m256i);
-    let d1 = _mm256_loadu_si256(ptr.add(32) as *const __m256i);
-    let d2 = _mm256_loadu_si256(ptr.add(64) as *const __m256i);
-    let d3 = _mm256_loadu_si256(ptr.add(96) as *const __m256i);
+    let d0 = unsafe { _mm256_loadu_si256(ptr as *const __m256i) };
+    let d1 = unsafe { _mm256_loadu_si256(ptr.add(32) as *const __m256i) };
+    let d2 = unsafe { _mm256_loadu_si256(ptr.add(64) as *const __m256i) };
+    let d3 = unsafe { _mm256_loadu_si256(ptr.add(96) as *const __m256i) };
 
     let q = _mm256_set1_epi8(b'"' as i8);
     let b = _mm256_set1_epi8(b'\\' as i8);
     let c = _mm256_set1_epi8(0x20);
 
-    let m0 = _mm256_or_si256(_mm256_cmpeq_epi8(d0, q), _mm256_or_si256(_mm256_cmpeq_epi8(d0, b), _mm256_cmpgt_epi8(c, d0)));
-    let m1 = _mm256_or_si256(_mm256_cmpeq_epi8(d1, q), _mm256_or_si256(_mm256_cmpeq_epi8(d1, b), _mm256_cmpgt_epi8(c, d1)));
-    let m2 = _mm256_or_si256(_mm256_cmpeq_epi8(d2, q), _mm256_or_si256(_mm256_cmpeq_epi8(d2, b), _mm256_cmpgt_epi8(c, d2)));
-    let m3 = _mm256_or_si256(_mm256_cmpeq_epi8(d3, q), _mm256_or_si256(_mm256_cmpeq_epi8(d3, b), _mm256_cmpgt_epi8(c, d3)));
+    let m0 = _mm256_or_si256(
+        _mm256_cmpeq_epi8(d0, q),
+        _mm256_or_si256(_mm256_cmpeq_epi8(d0, b), _mm256_cmpgt_epi8(c, d0)),
+    );
+    let m1 = _mm256_or_si256(
+        _mm256_cmpeq_epi8(d1, q),
+        _mm256_or_si256(_mm256_cmpeq_epi8(d1, b), _mm256_cmpgt_epi8(c, d1)),
+    );
+    let m2 = _mm256_or_si256(
+        _mm256_cmpeq_epi8(d2, q),
+        _mm256_or_si256(_mm256_cmpeq_epi8(d2, b), _mm256_cmpgt_epi8(c, d2)),
+    );
+    let m3 = _mm256_or_si256(
+        _mm256_cmpeq_epi8(d3, q),
+        _mm256_or_si256(_mm256_cmpeq_epi8(d3, b), _mm256_cmpgt_epi8(c, d3)),
+    );
 
-    (_mm256_movemask_epi8(m0) | _mm256_movemask_epi8(m1) | _mm256_movemask_epi8(m2) | _mm256_movemask_epi8(m3)) as u32
+    (_mm256_movemask_epi8(m0)
+        | _mm256_movemask_epi8(m1)
+        | _mm256_movemask_epi8(m2)
+        | _mm256_movemask_epi8(m3)) as u32
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -101,10 +118,12 @@ unsafe fn find_escape_avx2(ptr: *const u8) -> i32 {
     let b = _mm256_set1_epi8(b'\\' as i8);
     let c = _mm256_set1_epi8(0x20);
 
-    let mask = _mm256_or_si256(_mm256_cmpeq_epi8(data, q), _mm256_or_si256(_mm256_cmpeq_epi8(data, b), _mm256_cmpgt_epi8(c, data)));
+    let mask = _mm256_or_si256(
+        _mm256_cmpeq_epi8(data, q),
+        _mm256_or_si256(_mm256_cmpeq_epi8(data, b), _mm256_cmpgt_epi8(c, data)),
+    );
     _mm256_movemask_epi8(mask)
 }
-
 
 /// Write `bytes` as a JSON string into `buf` (without allocating).
 ///
@@ -125,13 +144,17 @@ pub fn write_str_escape(buf: &mut Vec<u8>, bytes: &[u8]) {
         // Unrolled loop for large enough strings
         while i + 64 <= len {
             let mask = unsafe { find_escape_neon_x4(bytes.as_ptr().add(i)) };
-            if mask != 0 { break; }
+            if mask != 0 {
+                break;
+            }
             i += 64;
         }
 
         while i + 16 <= len {
             let mask = unsafe { find_escape_neon(bytes.as_ptr().add(i)) };
-            if mask != 0 { break; }
+            if mask != 0 {
+                break;
+            }
             i += 16;
         }
     }
@@ -141,17 +164,20 @@ pub fn write_str_escape(buf: &mut Vec<u8>, bytes: &[u8]) {
         if is_x86_feature_detected!("avx2") {
             while i + 128 <= len {
                 let mask = unsafe { find_escape_avx2_x4(bytes.as_ptr().add(i)) };
-                if mask != 0 { break; }
+                if mask != 0 {
+                    break;
+                }
                 i += 128;
             }
             while i + 32 <= len {
                 let mask = unsafe { find_escape_avx2(bytes.as_ptr().add(i)) };
-                if mask != 0 { break; }
+                if mask != 0 {
+                    break;
+                }
                 i += 32;
             }
         }
     }
-
 
     // Scalar fallback/remainder
     while i < len {
@@ -185,10 +211,16 @@ pub fn write_str_escape(buf: &mut Vec<u8>, bytes: &[u8]) {
 
 /// Write `bytes` as a JSON string into a raw pointer.
 /// Returns the new pointer position.
+///
+/// # Safety
+/// This function is unsafe because it dereferences raw pointers and performs unchecked memory operations.
+/// The caller must ensure that `curr` points to a valid, properly aligned, and writable buffer with sufficient capacity.
 #[inline]
 pub unsafe fn write_str_escape_raw(mut curr: *mut u8, bytes: &[u8]) -> *mut u8 {
-    *curr = b'"';
-    curr = curr.add(1);
+    unsafe {
+        *curr = b'"';
+        curr = curr.add(1);
+    }
     let len = bytes.len();
     let mut i = 0usize;
     let mut start = 0usize;
@@ -197,12 +229,16 @@ pub unsafe fn write_str_escape_raw(mut curr: *mut u8, bytes: &[u8]) -> *mut u8 {
     {
         while i + 64 <= len {
             let mask = unsafe { find_escape_neon_x4(bytes.as_ptr().add(i)) };
-            if mask != 0 { break; }
+            if mask != 0 {
+                break;
+            }
             i += 64;
         }
         while i + 16 <= len {
             let mask = unsafe { find_escape_neon(bytes.as_ptr().add(i)) };
-            if mask != 0 { break; }
+            if mask != 0 {
+                break;
+            }
             i += 16;
         }
     }
@@ -211,57 +247,64 @@ pub unsafe fn write_str_escape_raw(mut curr: *mut u8, bytes: &[u8]) -> *mut u8 {
     {
         if is_x86_feature_detected!("avx2") {
             while i + 128 <= len {
-                let mask = find_escape_avx2_x4(bytes.as_ptr().add(i));
-                if mask != 0 { break; }
+                let mask = unsafe { find_escape_avx2_x4(bytes.as_ptr().add(i)) };
+                if mask != 0 {
+                    break;
+                }
                 i += 128;
             }
             while i + 32 <= len {
-                let mask = find_escape_avx2(bytes.as_ptr().add(i));
-                if mask != 0 { break; }
+                let mask = unsafe { find_escape_avx2(bytes.as_ptr().add(i)) };
+                if mask != 0 {
+                    break;
+                }
                 i += 32;
             }
         }
     }
 
-    while i < len {
-        let b = *bytes.get_unchecked(i);
-        let esc = *ESCAPE_TABLE.get_unchecked(b as usize);
-        if esc != 0 {
-            let chunk = bytes.get_unchecked(start..i);
+    unsafe {
+        while i < len {
+            let b = *bytes.get_unchecked(i);
+            let esc = *ESCAPE_TABLE.get_unchecked(b as usize);
+            if esc != 0 {
+                let chunk = bytes.get_unchecked(start..i);
+                std::ptr::copy_nonoverlapping(chunk.as_ptr(), curr, chunk.len());
+                curr = curr.add(chunk.len());
+                match esc {
+                    b'u' => {
+                        std::ptr::copy_nonoverlapping(b"\\u00".as_ptr(), curr, 4);
+                        curr = curr.add(4);
+                        let hi = (b >> 4) & 0xF;
+                        let lo = b & 0xF;
+                        *curr = if hi < 10 { b'0' + hi } else { b'a' + hi - 10 };
+                        curr = curr.add(1);
+                        *curr = if lo < 10 { b'0' + lo } else { b'a' + lo - 10 };
+                        curr = curr.add(1);
+                    }
+                    c => {
+                        *curr = b'\\';
+                        curr = curr.add(1);
+                        *curr = c;
+                        curr = curr.add(1);
+                    }
+                }
+                start = i + 1;
+            }
+            i += 1;
+        }
+
+        if start < len {
+            let chunk = bytes.get_unchecked(start..len);
             std::ptr::copy_nonoverlapping(chunk.as_ptr(), curr, chunk.len());
             curr = curr.add(chunk.len());
-            match esc {
-                b'u' => {
-                    std::ptr::copy_nonoverlapping(b"\\u00".as_ptr(), curr, 4);
-                    curr = curr.add(4);
-                    let hi = (b >> 4) & 0xF;
-                    let lo = b & 0xF;
-                    *curr = if hi < 10 { b'0' + hi } else { b'a' + hi - 10 };
-                    curr = curr.add(1);
-                    *curr = if lo < 10 { b'0' + lo } else { b'a' + lo - 10 };
-                    curr = curr.add(1);
-                }
-                c => {
-                    *curr = b'\\';
-                    curr = curr.add(1);
-                    *curr = c;
-                    curr = curr.add(1);
-                }
-            }
-            start = i + 1;
         }
-        i += 1;
     }
-
-    if start < len {
-        let chunk = bytes.get_unchecked(start..len);
-        std::ptr::copy_nonoverlapping(chunk.as_ptr(), curr, chunk.len());
-        curr = curr.add(chunk.len());
+    unsafe {
+        *curr = b'"';
+        curr.add(1)
     }
-    *curr = b'"';
-    curr.add(1)
 }
-
 
 // ---------------------------------------------------------------------------
 // Serialize trait
@@ -271,36 +314,42 @@ pub trait Serialize {
 }
 
 pub trait SerializeRaw {
+    /// Serialize the value directly to raw memory.
+    ///
+    /// # Safety
+    /// This function is unsafe because it dereferences raw pointers.  
+    /// The caller must ensure that `curr` points to a valid, properly aligned, and writable buffer with sufficient capacity.
     unsafe fn serialize_raw(&self, curr: *mut u8) -> *mut u8;
 }
 
 impl SerializeRaw for String {
     #[inline(always)]
     unsafe fn serialize_raw(&self, curr: *mut u8) -> *mut u8 {
-        write_str_escape_raw(curr, self.as_bytes())
+        unsafe { write_str_escape_raw(curr, self.as_bytes()) }
     }
 }
 
 impl SerializeRaw for str {
     #[inline(always)]
     unsafe fn serialize_raw(&self, curr: *mut u8) -> *mut u8 {
-        write_str_escape_raw(curr, self.as_bytes())
+        unsafe { write_str_escape_raw(curr, self.as_bytes()) }
     }
 }
 
 impl SerializeRaw for bool {
     #[inline(always)]
     unsafe fn serialize_raw(&self, curr: *mut u8) -> *mut u8 {
-        if *self {
-            std::ptr::copy_nonoverlapping(b"true".as_ptr(), curr, 4);
-            curr.add(4)
-        } else {
-            std::ptr::copy_nonoverlapping(b"false".as_ptr(), curr, 5);
-            curr.add(5)
+        unsafe {
+            if *self {
+                std::ptr::copy_nonoverlapping(b"true".as_ptr(), curr, 4);
+                curr.add(4)
+            } else {
+                std::ptr::copy_nonoverlapping(b"false".as_ptr(), curr, 5);
+                curr.add(5)
+            }
         }
     }
 }
-
 
 impl Serialize for String {
     #[inline(always)]
@@ -344,8 +393,10 @@ macro_rules! impl_serialize_int {
                     let mut buffer = itoa::Buffer::new();
                     let s = buffer.format(*self);
                     let len = s.len();
-                    std::ptr::copy_nonoverlapping(s.as_ptr(), curr, len);
-                    curr.add(len)
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(s.as_ptr(), curr, len);
+                        curr.add(len)
+                    }
                 }
             }
         )*
@@ -371,8 +422,10 @@ macro_rules! impl_serialize_float {
                     let mut buffer = ryu::Buffer::new();
                     let s = buffer.format(*self);
                     let len = s.len();
-                    std::ptr::copy_nonoverlapping(s.as_ptr(), curr, len);
-                    curr.add(len)
+                    unsafe {
+                        std::ptr::copy_nonoverlapping(s.as_ptr(), curr, len);
+                        curr.add(len)
+                    }
                 }
             }
         )*
@@ -382,6 +435,10 @@ macro_rules! impl_serialize_float {
 impl_serialize_float!(f32, f64);
 
 /// Raw global dispatcher
+///
+/// # Safety
+/// This function is unsafe because it calls unsafe trait methods that dereference raw pointers.
+/// The caller must ensure that `curr` points to a valid, properly aligned, and writable buffer with sufficient capacity.
 #[inline(always)]
 pub unsafe fn write_value_raw<T: SerializeRaw + ?Sized>(val: &T, curr: *mut u8) -> *mut u8 {
     unsafe { val.serialize_raw(curr) }
@@ -392,7 +449,6 @@ pub unsafe fn write_value_raw<T: SerializeRaw + ?Sized>(val: &T, curr: *mut u8) 
 pub fn write_value<T: Serialize + ?Sized>(val: &T, buf: &mut Vec<u8>) {
     val.serialize(buf);
 }
-
 
 // ---------------------------------------------------------------------------
 // Advanced Serialize implementations (Collections, Option, etc.)
@@ -453,42 +509,46 @@ impl<'a, T: Serialize + ?Sized + ToOwned> Serialize for Cow<'a, T> {
 impl<T: SerializeRaw> SerializeRaw for Vec<T> {
     #[inline]
     unsafe fn serialize_raw(&self, curr: *mut u8) -> *mut u8 {
-        self.as_slice().serialize_raw(curr)
+        unsafe { self.as_slice().serialize_raw(curr) }
     }
 }
 
 impl<T: SerializeRaw> SerializeRaw for [T] {
     #[inline]
     unsafe fn serialize_raw(&self, mut curr: *mut u8) -> *mut u8 {
-        *curr = b'[';
-        curr = curr.add(1);
-        for (i, item) in self.iter().enumerate() {
-            if i > 0 {
-                *curr = b',';
-                curr = curr.add(1);
+        unsafe {
+            *curr = b'[';
+            curr = curr.add(1);
+            for (i, item) in self.iter().enumerate() {
+                if i > 0 {
+                    *curr = b',';
+                    curr = curr.add(1);
+                }
+                curr = item.serialize_raw(curr);
             }
-            curr = item.serialize_raw(curr);
+            *curr = b']';
+            curr.add(1)
         }
-        *curr = b']';
-        curr.add(1)
     }
 }
 
 impl<T: SerializeRaw + ?Sized> SerializeRaw for &T {
     #[inline(always)]
     unsafe fn serialize_raw(&self, curr: *mut u8) -> *mut u8 {
-        (**self).serialize_raw(curr)
+        unsafe { (**self).serialize_raw(curr) }
     }
 }
 
 impl<T: SerializeRaw> SerializeRaw for Option<T> {
     #[inline]
     unsafe fn serialize_raw(&self, curr: *mut u8) -> *mut u8 {
-        match self {
-            Some(v) => v.serialize_raw(curr),
-            None => {
-                std::ptr::copy_nonoverlapping(b"null".as_ptr(), curr, 4);
-                curr.add(4)
+        unsafe {
+            match self {
+                Some(v) => v.serialize_raw(curr),
+                None => {
+                    std::ptr::copy_nonoverlapping(b"null".as_ptr(), curr, 4);
+                    curr.add(4)
+                }
             }
         }
     }
@@ -497,13 +557,13 @@ impl<T: SerializeRaw> SerializeRaw for Option<T> {
 impl<T: SerializeRaw + ?Sized> SerializeRaw for Box<T> {
     #[inline(always)]
     unsafe fn serialize_raw(&self, curr: *mut u8) -> *mut u8 {
-        self.as_ref().serialize_raw(curr)
+        unsafe { self.as_ref().serialize_raw(curr) }
     }
 }
 
 impl<'a, T: SerializeRaw + ?Sized + ToOwned> SerializeRaw for Cow<'a, T> {
     #[inline(always)]
     unsafe fn serialize_raw(&self, curr: *mut u8) -> *mut u8 {
-        self.as_ref().serialize_raw(curr)
+        unsafe { self.as_ref().serialize_raw(curr) }
     }
 }
