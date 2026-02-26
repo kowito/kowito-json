@@ -10,3 +10,11 @@ pub use string::KString;
 pub use view::KView;
 
 pub use kjson_derive::Kjson;
+
+/// Example binding utilizing Schema-JIT
+#[derive(Kjson, Default, Debug)]
+pub struct FastUser {
+    pub id: u64,
+    pub name: String,
+    pub active: bool,
+}
