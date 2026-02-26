@@ -24,6 +24,11 @@ impl<'a> Scanner<'a> {
         use std::simd::prelude::*;
 
         while i + 32 <= bytes.len() {
+            // Data Prefetching: Warm up the L1/L2 cache ahead of our SIMD block
+            unsafe {
+                std::intrinsics::prefetch_read_data::<u8, 3>(bytes.as_ptr().add(i + 128));
+            }
+            
             let chunk = u8x32::from_slice(&bytes[i..]);
 
             if in_string {
