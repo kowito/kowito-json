@@ -1,6 +1,6 @@
 [package]
 name = "kowito-json"
-version = "0.2.5"
+version = "0.2.6"
 edition = "2024"
 authors = ["Kowito <hi@kowito.com>"]
 description = "A high-performance zero-decode JSON parser using SIMD, ARM NEON PMULL, and schema JIT binding."
@@ -10,7 +10,7 @@ license = "MIT"
 members = ["kowito-json-derive"]
 
 [dependencies]
-kowito-json-derive = { path = "kowito-json-derive", version = "0.2.3" }
+kowito-json-derive = { path = "kowito-json-derive", version = "0.2.4" }
 fxhash = "0.2.1"
 pulp = "0.22.2"
 serde = { version = "1.0.228", features = ["derive"] }
