@@ -9,7 +9,8 @@ Currently optimized for Apple Silicon (M-series / ARM NEON) via Carry-Less Multi
 ## Features
 - **Zero-Decode Architecture:** Avoids full deserialization until you access a specific field.
 - **SIMD Optimized:** Uses architecture-specific intrinsics (like ARM NEON `PMULL`) to track structural tokens.
-- **Schema JIT Parsing:** With `kowito-json-derive`, bind JSON instantly into typed Rust structs at 6,600+ MiB/s.
+- **Schema JIT Parsing:** With `kowito_json_derive`, bind JSON instantly into typed Rust structs at 6,600+ MiB/s.
+- **Ultra-Fast Schema-JIT Serialization:** Generate JSON from structs at 4,300+ MiB/s using compile-time templates.
 - **Hardware-Aware Memory Access:** Pre-fetches byte chunks into L1 cache for zero CPU stalling.
 
 ## Benchmarks
@@ -23,7 +24,7 @@ Parsed on Apple Silicon M4 (NEON PMULL optimized). Measurements taken using `cri
 | `simd-json` | ~276 MiB/s | ~1.1x Faster |
 | `serde_json` | ~245 MiB/s | 1x (Baseline) |
 
-### Performance Visualization (MiB/s)
+### Parsing Performance (MiB/s)
 
 ```text
 serde_json  [■] 245
@@ -31,6 +32,16 @@ simd-json   [■] 276
 sonic-rs    [■■■■■] 1341
 kowito-json [■■■■■■■■■■■■■■■■■■■■■■■■■■■] 6635
 ```
+
+### Serialization Performance (MiB/s)
+
+Measurements taken on small payloads (3-8 fields).
+
+| Serializer | Throughput (MiB/s) | Relative Speed (vs `serde_json`) |
+| :--- | :--- | :--- |
+| **kowito-json (JIT)** | **~4,350 MiB/s** | **~2.8x Faster** |
+| `sonic-rs` | ~1,750 MiB/s | ~1.1x Faster |
+| `serde_json` | ~1,520 MiB/s | 1x (Baseline) |
 
 ## Installation
 
@@ -72,13 +83,24 @@ fn main() {
     
     // 4. Instantly bind to a struct
     let user = User::from_kview(&view).unwrap();
-    
     println!("Parsed User: {:?}", user);
+
+    // 5. Serialize back to JSON at memory-bandwidth speeds
+    let mut out_buf = Vec::new();
+    user.to_kbytes(&mut out_buf);
+    println!("Serialized: {}", String::from_utf8(out_buf).unwrap());
 }
 ```
 
 ## Under the Hood
-Most parsers build an AST or evaluate string quotes using branching logic. `kowito-json` uses SIMD Carry-Less Multiplication (Polynomial Math) to trace out string blocks parity in a single CPU cycle without branching. This mathematically perfect parsing removes branch mispredictions, maximizing the throughput of modem superscalar processors.
+### Parsing
+Most parsers build an AST or evaluate string quotes using branching logic. `kowito-json` uses SIMD Carry-Less Multiplication (Polynomial Math) to trace out string blocks parity in a single CPU cycle without branching. This mathematically perfect parsing removes branch mispredictions, maximizing the throughput of modern superscalar processors.
+
+### Serialization
+`kowito-json` uses **Schema-JIT Serialization**. Instead of using generic reflection or slow `std::fmt` traits, the `Kjson` macro generates a specialized `to_kbytes` method at compile-time. This method:
+- Interleaves field keys and structural characters as static byte slices (`memcpy` from RO data).
+- Uses `itoa` and `ryu` for branchless numeric formatting.
+- Employs a specialized lookup-table for escape-fast-path string processing.
 
 ## License
 
