@@ -2,12 +2,12 @@ use std::borrow::Cow;
 
 /// A lazy string wrapper that stores a slice and an `escaped` flag. Decoding only happens on access.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct KowitString<'a> {
+pub struct KString<'a> {
     raw: &'a [u8],
     has_escapes: bool,
 }
 
-impl<'a> KowitString<'a> {
+impl<'a> KString<'a> {
     #[inline(always)]
     pub fn new(raw: &'a [u8], has_escapes: bool) -> Self {
         Self { raw, has_escapes }
@@ -78,7 +78,7 @@ mod tests {
 
     #[test]
     fn test_empty_string() {
-        let s = KowitString::new(b"", false);
+        let s = KString::new(b"", false);
         assert_eq!(s.as_raw(), b"");
         assert!(!s.has_escapes());
         assert_eq!(s.decode(), "");
@@ -86,7 +86,7 @@ mod tests {
 
     #[test]
     fn test_basic_string() {
-        let s = KowitString::new(b"hello world", false);
+        let s = KString::new(b"hello world", false);
         assert_eq!(s.as_raw(), b"hello world");
         assert!(!s.has_escapes());
         assert_eq!(s.decode(), "hello world");
@@ -94,7 +94,7 @@ mod tests {
 
     #[test]
     fn test_simple_escapes() {
-        let s = KowitString::new(br#"line\nbreak"#, true);
+        let s = KString::new(br#"line\nbreak"#, true);
         assert!(s.has_escapes());
         assert_eq!(s.decode(), "line\nbreak");
     }
@@ -102,7 +102,7 @@ mod tests {
     #[test]
     fn test_all_control_escapes() {
         let raw = br#"\"\/\b\f\n\r\t\\"#;
-        let s = KowitString::new(raw, true);
+        let s = KString::new(raw, true);
         assert!(s.has_escapes());
         assert_eq!(s.decode(), "\"/\\x08\\x0C\n\r\t\\".replace("\\x08", "\x08").replace("\\x0C", "\x0C"));
     }
@@ -111,7 +111,7 @@ mod tests {
     fn test_unicode_escape_skip() {
         // Our baseline skips unicode evaluation for now, testing the skip behavior
         let raw = br#"hello\u1234world"#;
-        let s = KowitString::new(raw, true);
+        let s = KString::new(raw, true);
         assert!(s.has_escapes());
         assert_eq!(s.decode(), "helloworld"); // Validates it skipped \u1234
     }
@@ -119,7 +119,7 @@ mod tests {
     #[test]
     fn test_invalid_escape_at_end() {
         let raw = br#"hello\"#;
-        let s = KowitString::new(raw, true);
+        let s = KString::new(raw, true);
         assert!(s.has_escapes());
         // Since it's invalid it should just drop it/handle gracefully without panic
         assert_eq!(s.decode(), "hello");

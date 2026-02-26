@@ -6,7 +6,7 @@ pub mod string;
 pub mod view;
 
 pub use arena::Scratchpad;
-pub use string::KowitString;
-pub use view::KowitView;
+pub use string::KString;
+pub use view::KView;
 
-pub use kowito_derive::Kowit;
+pub use kjson_derive::Kjson;

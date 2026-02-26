@@ -11,8 +11,8 @@ fn compute_hash(s: &str) -> u64 {
     hash
 }
 
-#[proc_macro_derive(Kowit)]
-pub fn kowito_derive(input: TokenStream) -> TokenStream {
+#[proc_macro_derive(Kjson)]
+pub fn kjson_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
 
@@ -39,7 +39,7 @@ pub fn kowito_derive(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         impl #name {
             #[inline(always)]
-            pub fn kowito_schema_version() -> &'static str {
+            pub fn kjson_schema_version() -> &'static str {
                 "1.0.0-turbo"
             }
             

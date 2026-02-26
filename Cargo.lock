@@ -260,18 +260,18 @@ dependencies = [
 ]
 
 [[package]]
-name = "kowit-json"
+name = "kjson"
 version = "0.1.0"
 dependencies = [
  "criterion",
  "fxhash",
- "kowito-derive",
+ "kjson-derive",
  "pulp",
  "serde",
 ]
 
 [[package]]
-name = "kowito-derive"
+name = "kjson-derive"
 version = "0.1.0"
 dependencies = [
  "proc-macro2",
