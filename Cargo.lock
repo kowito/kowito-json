@@ -260,7 +260,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kjson"
+name = "kowit-json"
 version = "0.1.0"
 dependencies = [
  "criterion",

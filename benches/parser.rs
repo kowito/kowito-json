@@ -1,11 +1,11 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use kjson::scanner::Scanner;
-use kjson::arena::Scratchpad;
+use kowit_json::scanner::Scanner;
+use kowit_json::arena::Scratchpad;
 
 fn bench_scanner(c: &mut Criterion) {
     let mut group = c.benchmark_group("Scanner");
     
-    let json_data = br#"{"name": "Kowito", "type": "JSON", "version": 1, "features": ["simd", "zero-copy", "fast"]}"#;
+    let json_data = br#"{"name": "Kowit", "type": "JSON", "version": 1, "features": ["simd", "zero-copy", "fast"]}"#;
     
     let mut scratchpad = Scratchpad::new(1024);
 

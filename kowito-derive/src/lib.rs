@@ -11,7 +11,7 @@ fn compute_hash(s: &str) -> u64 {
     hash
 }
 
-#[proc_macro_derive(Kowito)]
+#[proc_macro_derive(Kowit)]
 pub fn kowito_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
