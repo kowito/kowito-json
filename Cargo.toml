@@ -10,7 +10,7 @@ license = "MIT"
 members = ["kowito-json-derive"]
 
 [dependencies]
-kowito-json-derive = { path = "kowito-json-derive" }
+kowito-json-derive = { path = "kowito-json-derive", version = "0.2.0" }
 fxhash = "0.2.1"
 pulp = "0.22.2"
 serde = { version = "1.0.228", features = ["derive"] }
