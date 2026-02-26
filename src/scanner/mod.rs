@@ -29,12 +29,11 @@ impl<'a> Scanner<'a> {
         {
             // Note: std::arch::is_aarch64_feature_detected!("sve2") is currently unstable
             // In a production Apple Silicon (M4+) environment, we would detect SVE/SVE2
-            // For now, if NEON is available, we use our 6.4 GB/s PMULL scanner.
+            // For now, NEON is always available on AArch64.
             // SVE2 will be wired up here when `stdarch_aarch64_sve` stabilizes in rustc.
-            if std::arch::is_aarch64_feature_detected!("neon") {
-                // Safety: Verified NEON is supported on this CPU at runtime
-                return unsafe { neon::scan_neon(self.input, tape) };
-            }
+            
+            // Safety: NEON is guaranteed on aarch64.
+            return unsafe { neon::scan_neon(self.input, tape) };
         }
 
         // Fallback to pure portable SIMD (Fast, but without carry-less bitmanipulation)
