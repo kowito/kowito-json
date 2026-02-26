@@ -14,6 +14,8 @@ kowito-json-derive = { path = "kowito-json-derive" }
 fxhash = "0.2.1"
 pulp = "0.22.2"
 serde = { version = "1.0.228", features = ["derive"] }
+itoa = "1.0.17"
+ryu = "1.0.23"
 
 [dev-dependencies]
 criterion = "0.8.2"
@@ -23,4 +25,8 @@ sonic-rs = "0.5.7"
 
 [[bench]]
 name = "parser"
+harness = false
+
+[[bench]]
+name = "serialize"
 harness = false

@@ -366,8 +366,10 @@ version = "0.2.0"
 dependencies = [
  "criterion",
  "fxhash",
+ "itoa",
  "kowito-json-derive",
  "pulp",
+ "ryu",
  "serde",
  "serde_json",
  "simd-json",
@@ -378,8 +380,10 @@ dependencies = [
 name = "kowito-json-derive"
 version = "0.2.0"
 dependencies = [
+ "itoa",
  "proc-macro2",
  "quote",
+ "ryu",
  "syn",
 ]
 
