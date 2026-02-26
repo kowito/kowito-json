@@ -1,59 +1,102 @@
 # kowito-json
 
-**A high-performance zero-decode JSON parser.**
+**A high-performance zero-decode JSON parser and schema-JIT serializer for Rust.**
 
-`kowito-json` is a highly-optimized JSON parsing and binding library for Rust. Leveraging state-of-the-art SIMD instructions, hardware prefetching, and a "Zero-Decode" philosophy, it parses JSON by completely avoiding scalar loops and allocations until absolutely necessary.
+`kowito-json` parses and serializes JSON at memory-bandwidth speeds using ARM NEON Carry-Less Multiplication (`PMULL`), zero-copy tape scanning, and compile-time schema baking via the `#[derive(KJson)]` macro.
 
-Currently optimized for Apple Silicon (M-series / ARM NEON) via Carry-Less Multiplication (`PMULL`), `kowito-json` is capable of handling over 5.5 GiB/s sustained parsing speeds.
+> Optimized for Apple Silicon (M-series / aarch64). AVX2 and portable-SIMD paths available.
 
 ## Features
-- **Zero-Decode Architecture:** Avoids full deserialization until you access a specific field.
-- **SIMD Optimized:** Uses architecture-specific intrinsics (like ARM NEON `PMULL`) to track structural tokens.
-- **Schema JIT Parsing:** With `kowito_json_derive`, bind JSON instantly into typed Rust structs at 6.6 GiB/s.
-- **Ultra-Fast JIT Serialization:** Generate JSON from structs at 3.9 - 16 GiB/s using compile-time templates and NEON SIMD escaping.
-- **Hardware-Aware Memory Access:** Pre-fetches byte chunks into L1 cache for zero CPU stalling.
+
+- **Zero-Decode Parser** — scans JSON into a flat `u32` tape without allocating or decoding; fields are read lazily on access.
+- **SIMD String Tracking** — uses `PMULL` carry-less multiplication to compute string-mask parity across 16-byte chunks in a single cycle, eliminating all branch mispredictions.
+- **Schema-JIT Serializer** — `#[derive(KJson)]` bakes field key prefixes as `&'static [u8]` at compile time; the hot path is pure `memcpy` + `itoa`/`ryu`.
+- **NEON SIMD Escape Scanning** — string escaping scans 16 bytes per cycle; only slows for rare escape characters.
+- **Hardware Prefetch** — `std::intrinsics::prefetch_read_data` keeps the next chunk in L1 while the current one is processed.
+- **Arena Allocator** — `Scratchpad` and thread-local `with_scratch_tape` eliminate per-parse heap allocation.
 
 ## Benchmarks
 
-Parsed on Apple Silicon M4 (NEON PMULL optimized). Measurements taken using `criterion` on a 10MB massive JSON payload.
+Measured on **Apple Silicon M4**, release profile, using `criterion` (100 samples, 95% CI).
 
-| Parser | Throughput (GiB/s) | Relative Speed (vs `serde_json`) |
-| :--- | :--- | :--- |
-| **kowito-json** | **~6.48 GiB/s** | **~27x Faster** |
-| `sonic-rs` | ~1.31 GiB/s | ~5.4x Faster |
-| `simd-json` | ~0.26 GiB/s | ~1.1x Faster |
-| `serde_json` | ~0.24 GiB/s | 1x (Baseline) |
+### Parsing (10 MB massive JSON array)
 
-### Serialization Performance (GiB/s)
+| Parser | Throughput | vs `serde_json` |
+|:---|:---|:---|
+| **kowito-json** | **~6.48 GiB/s** | **27× faster** |
+| `sonic-rs` | ~1.31 GiB/s | 5.4× faster |
+| `simd-json` | ~0.26 GiB/s | 1.1× faster |
+| `serde_json` | ~0.24 GiB/s | baseline |
 
-Measurements taken on Apple Silicon M4.
+### Serialization — Micro Payloads
 
-| Serializer | Tiny (3 fields) | Medium (7 fields) | Numeric (8 fields) |
-| :--- | :--- | :--- | :--- |
-| **kowito-json (JIT)** | **12.3 ns** | **37.5 ns** | **84.5 ns** |
-| `sonic-rs` | 21.3 ns | 64.9 ns | 105.2 ns |
-| `serde_json` | 33.7 ns | 83.6 ns | 117.4 ns |
+| Payload | `serde_json` | `sonic_rs` | **kowito-json** | Gain |
+|:---|:---|:---|:---|:---|
+| Tiny — 3 fields | 32.5 ns | 21.5 ns | **9.88 ns** | **3.3×** |
+| Medium — 7 fields | 79.3 ns | 63.2 ns | **33.8 ns** | **2.3×** |
+| Numeric — 8 fields | 114.4 ns | 99.0 ns | **79.8 ns** | **1.4×** |
 
-### Mass-String Throughput (GiB/s)
-Best for large blobs, logs, or base64 data.
+### Serialization — Hot Loop (1 000 items)
 
-| Serializer | 10KB String (NEON x4) |
-| :--- | :--- |
-| **kowito-json (JIT)** | **~22.76 GiB/s** |
-| `sonic-rs` | ~32.90 GiB/s |
-| `serde_json` | ~3.62 GiB/s |
+| Serializer | Latency | Throughput |
+|:---|:---|:---|
+| **kowito-json** | **39.6 µs** | **2.75 GiB/s** |
+| `sonic_rs` | 70.1 µs | 1.55 GiB/s |
+| `serde_json` | 87.1 µs | 1.25 GiB/s |
+
+### Serialization — Large String (10 KB, SIMD fast-path)
+
+| Serializer | Latency | Throughput |
+|:---|:---|:---|
+| `sonic_rs` | **281 ns** | **33.2 GiB/s** |
+| **kowito-json** | 370 ns | 25.0 GiB/s |
+| `serde_json` | 2542 ns | 3.66 GiB/s |
+
+> kowito-json leads on all small/medium payloads. sonic_rs edges ahead on pure large-string throughput due to a more specialized escape path.
 
 ## Installation
 
-Add this to your `Cargo.toml`:
-
 ```toml
 [dependencies]
-kowito-json = "0.2.2"
-kowito-json-derive = "0.2.1"
+kowito-json        = "0.2.5"
+kowito-json-derive = "0.2.3"
+```
+
+Requires **Rust nightly** (uses `portable_simd`):
+
+```toml
+# rust-toolchain.toml
+[toolchain]
+channel = "nightly"
 ```
 
 ## Quick Start
+
+### Serialization
+
+```rust
+use kowito_json_derive::KJson;
+
+#[derive(Debug, KJson)]
+struct User {
+    id: u64,
+    name: String,
+    active: bool,
+    score: f64,
+}
+
+fn main() {
+    let user = User { id: 1, name: "Alice".to_string(), active: true, score: 98.6 };
+
+    let mut buf = Vec::new();
+    user.to_json_bytes(&mut buf);
+
+    println!("{}", std::str::from_utf8(&buf).unwrap());
+    // {"id":1,"name":"Alice","active":true,"score":98.6}
+}
+```
+
+### Parsing (Zero-Decode)
 
 ```rust
 use kowito_json::{KView, Scratchpad};
@@ -65,96 +108,163 @@ struct User {
     id: i64,
     name: String,
     active: bool,
-    balance: f64,
 }
 
 fn main() {
-    let json_bytes = br#"{"id": 42, "name": "Kowito", "active": true, "balance": 1234.56}"#;
-    
-    // 1. Scan and parse
+    let json = br#"{"id": 42, "name": "Kowito", "active": true}"#;
+
     let mut scratch = Scratchpad::new(1024);
     let tape = scratch.get_mut_tape();
-    Scanner::new(json_bytes).scan(tape);
-    let view = KView::new(json_bytes, tape);
-    let user = User::from_kview(&view); // Ultra-fast zero-decode
 
-    // 2. Serialize at memory-bandwidth speeds
-    let mut out_buf = Vec::with_capacity(128);
-    user.to_json_bytes(&mut out_buf);
-    println!("Serialized: {}", String::from_utf8_lossy(&out_buf));
+    // SIMD scan — fills tape with structural token offsets
+    let n = Scanner::new(json).scan(tape);
+
+    // Zero-copy view — no allocation, no string decoding
+    let view = KView::new(json, &tape[..n]);
+    let user = User::from_kview(&view);
+
+    println!("{user:?}");
 }
 ```
 
-## Advanced Examples
+## Examples
 
-### Nested Structs
+Run any example with `cargo run --example <name>`.
 
-The `KJson` derive macro automatically generates optimized templates for nested types.
+### All examples
+
+| Example | Command | What it shows |
+|:---|:---|:---|
+| Basic serialization | `cargo run --example 01_basic_serialize` | `#[derive(KJson)]`, `to_json_bytes()` |
+| All primitive types | `cargo run --example 02_all_types` | integers, floats, bools, all string escapes |
+| Advanced types | `cargo run --example 03_advanced_types` | `Option`, `Vec`, `Box`, `Cow`, nested structs |
+| Arena allocator | `cargo run --example 04_arena_scratch` | `Scratchpad`, `with_scratch_tape`, reuse patterns |
+| Low-level scanner | `cargo run --example 05_scanner` | `Scanner::scan`, tape inspection |
+| Hot-loop batch | `cargo run --example 06_hot_loop` | NDJSON stream, JSON array, server buffer reuse |
+| Manual `Serialize` | `cargo run --example 07_manual_serialize` | renamed fields, skip-null, tagged enum |
+| SIMD string writer | `cargo run --example 08_string_escape` | `write_str_escape` directly, control chars |
+
+### Batch serialization (NDJSON)
 
 ```rust
-#[derive(KJson)]
-pub struct Address {
-    pub city: String,
-    pub zip: u32,
-}
+use kowito_json_derive::KJson;
 
 #[derive(KJson)]
-pub struct Profile {
-    pub user_id: u64,
-    pub address: Address,
-    pub tags: Vec<String>, // Coming soon in Phase 4
+struct LogEntry { timestamp: u64, level: String, message: String }
+
+let entries = vec![
+    LogEntry { timestamp: 1_700_000_001, level: "INFO".into(), message: "started".into() },
+    LogEntry { timestamp: 1_700_000_002, level: "WARN".into(), message: "slow query".into() },
+];
+
+let mut buf = Vec::with_capacity(entries.len() * 128);
+for entry in &entries {
+    entry.to_json_bytes(&mut buf);
+    buf.push(b'\n');
 }
+println!("{}", std::str::from_utf8(&buf).unwrap());
 ```
 
-### Batch Serialization
-
-For scenarios like high-performance logging or API responses with many items, reuse the same buffer to minimize allocations.
+### Arena-backed parsing (zero allocation)
 
 ```rust
-let items = vec![user1, user2, user3];
-let mut buffer = Vec::with_capacity(1024 * 10);
+use kowito_json::arena::with_scratch_tape;
+use kowito_json::scanner::Scanner;
 
-for item in items {
-    item.to_json_bytes(&mut buffer);
-    buffer.push(b'\n'); // Newline delimited JSON (NDJSON)
+let jsons: &[&[u8]] = &[
+    br#"{"id":1,"val":"alpha"}"#,
+    br#"{"id":2,"val":"beta"}"#,
+];
+
+for json in jsons {
+    with_scratch_tape(|tape| {
+        let n = Scanner::new(json).scan(tape);
+        println!("{} tokens", n);
+    });
 }
 ```
 
-### Custom Serialization
-
-While `#[derive(KJson)]` is recommended for maximum performance, you can manually implement the `Serialize` trait.
+### Manual `Serialize` implementation
 
 ```rust
 use kowito_json::serialize::{Serialize, write_str_escape, write_value};
 
-struct CustomLog {
-    level: String,
-    msg: String,
+struct ApiResponse {
+    status: u32,
+    data: Option<String>,
 }
 
-impl Serialize for CustomLog {
+impl Serialize for ApiResponse {
     fn serialize(&self, buf: &mut Vec<u8>) {
-        buf.push(b'{');
-        buf.extend_from_slice(b"\"level\":");
-        write_str_escape(buf, self.level.as_bytes());
-        buf.push(b',');
-        buf.extend_from_slice(b"\"msg\":");
-        write_str_escape(buf, self.msg.as_bytes());
+        buf.extend_from_slice(b"{\"status\":");
+        write_value(&self.status, buf);
+        if let Some(ref d) = self.data {
+            buf.extend_from_slice(b",\"data\":");
+            write_str_escape(buf, d.as_bytes());
+        }
         buf.push(b'}');
     }
 }
 ```
 
-## Under the Hood
-### Parsing
-Most parsers build an AST or evaluate string quotes using branching logic. `kowito-json` uses SIMD Carry-Less Multiplication (Polynomial Math) to trace out string blocks parity in a single CPU cycle without branching. This mathematically perfect parsing removes branch mispredictions, maximizing the throughput of modern superscalar processors.
+### Nested structs
 
-### Serialization
-`kowito-json` uses **Schema-JIT Serialization**. Instead of using generic reflection or slow `std::fmt` traits, the `KJson` macro generates a specialized `to_json_bytes` method at compile-time. This method:
-- Interleaves field keys and structural characters as static byte slices (`memcpy` from RO data).
-- Uses `itoa` and `ryu` for branchless numeric formatting.
-- Employs **ARM NEON SIMD** processing to scan 16-byte blocks for escape characters in a single cycle.
+```rust
+use kowito_json_derive::KJson;
+
+#[derive(KJson)]
+pub struct Address {
+    pub street: String,
+    pub city: String,
+    pub zip: String,
+}
+
+#[derive(KJson)]
+pub struct Company {
+    pub name: String,
+    pub employee_count: u32,
+    pub hq: Address,
+}
+```
+
+> Nested `KJson` structs serialize correctly because each implements `SerializeRaw` — the outer struct's JIT template calls the inner one directly without boxing.
+
+## Under the Hood
+
+### Parsing — SIMD String Parity via PMULL
+
+Traditional parsers scan for `"` with scalar loops. `kowito-json` instead computes the **string block mask** using ARM NEON `vmull_p64` (carry-less multiply):
+
+```
+quote_mask = PMULL(quote_positions, 0xFFFF…)  // XOR-prefix-sum in one instruction
+string_mask = quote_mask XOR prev_in_string    // carry across 64-byte blocks
+```
+
+This gives a bitmask where every bit inside a string is 1, outside is 0 — enabling branchless structural token extraction. The result is a flat `u32` tape of byte offsets; no AST, no allocation.
+
+### Serialization — Schema-JIT Templates
+
+`#[derive(KJson)]` runs at compile time and emits code equivalent to:
+
+```rust
+// Generated (simplified):
+pub fn to_json_bytes(&self, buf: &mut Vec<u8>) {
+    buf.reserve(STATIC_CAP + dynamic_cap);  // single pre-allocation
+    unsafe {
+        let mut p = buf.as_mut_ptr().add(buf.len());
+        copy_nonoverlapping(b"{\"id\":".as_ptr(), p, 6);  p = p.add(6);
+        p = itoa_raw(self.id, p);
+        copy_nonoverlapping(b",\"name\":\"".as_ptr(), p, 9);  p = p.add(9);
+        p = neon_escape_str(self.name.as_bytes(), p);
+        // ... remaining fields ...
+        *p = b'}'; p = p.add(1);
+        buf.set_len(p.offset_from(buf.as_ptr()) as usize);
+    }
+}
+```
+
+All field key bytes live in the read-only data segment. The hot path is a straight-line sequence of `memcpy` + numeric writes + SIMD escape — no branches, no reflection.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
