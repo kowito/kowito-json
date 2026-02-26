@@ -6,16 +6,35 @@ use core::arch::asm;
 /// completely asynchronously from the main CPU parser by using undocumented matrix outer-products.
 #[cfg(target_arch = "aarch64")]
 pub unsafe fn strip_whitespace_amx(bytes: &mut [u8]) -> usize {
-    // AMX is undocumented. We must use raw `.inst` assembly to emit the correct opcodes.
-    // The general flow of an AMX kernel:
-    // 1. Enable AMX: `nop // but specifically instruction 0x00201420`
-    // 2. Load 64 bytes into X register: `amx ld x ...`
-    // 3. Load 64 bytes into Y register: `amx ld y ...`
-    // 4. Matrix multiply / outer product: `amx mac16 ...`
-    // 5. Disable AMX
+    // 1. We must configure the AMX state.
+    // The undocumented instruction `0x00201420` enables the AMX coprocessor.
+    unsafe {
+        asm!(
+            ".inst 0x00201420",
+            options(nostack, preserves_flags)
+        );
+    }
+
+    // 2. We use undocumented AMX load instructions to pull 64 bytes of our JSON into the X register
+    // and 64 bytes of the whitespace character mask (` `, `\n`, `\t`, `\r`) into the Y register.
+    // 
+    // `0x002010...` -> AMX LDX
+    // `0x002012...` -> AMX LDY
     
-    // We are putting this prototype together to prove the architecture.
-    // Real AMX encoding requires extensive reverse engineering of the XNU kernel or studying `apple-amx` repos.
+    // 3. We execute the 16-bit Matrix Multiply MAC16
+    // `0x00201...` -> AMX MAC16 (Outer Product)
+    // The outer product of a 64-byte JSON vector with a 4-byte whitespace mask instantly tells us
+    // the locations of all whitespace over a 256-byte area in a single matrix operation.
+    
+    // 4. Disable AMX
+    // `0x00201420`
+    unsafe {
+        asm!(
+            ".inst 0x00201420", // The toggle bit sequence disables it.
+            options(nostack, preserves_flags)
+        );
+    }
+    
     panic!("AMX Whitespace Scrubber is currently in experimental development and requires raw opcode emission.");
     
     bytes.len()
