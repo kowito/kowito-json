@@ -45,7 +45,7 @@ kowito-json-derive = "0.2.0"
 ## Quick Start
 
 ```rust
-use kowito_json::KowitoView;
+use kowito_json::KView;
 use kowito_json_derive::from_kview;
 
 #[derive(Debug)]
@@ -65,7 +65,7 @@ fn main() {
     let json_bytes = br#"{"id": 42, "name": "Kowito", "is_active": true}"#;
     
     // Scan and build the structural tape blazing fast
-    let view = KowitoView::new(json_bytes);
+    let view = KView::new(json_bytes);
     
     // Instantly bind to a struct
     let user = User::from_kview(&view).unwrap();
