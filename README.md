@@ -19,7 +19,16 @@
 
 Measured on **Apple Silicon M4**, release profile, using `criterion` (100 samples, 95% CI).
 
-### Parsing (10 MB massive JSON array)
+### Parsing — 10 MB Massive JSON Array
+
+**Visual Chart (Higher = Faster)**
+
+```
+kowito-json ████████████████████████████ 6.48 GiB/s ⭐ FASTEST
+sonic_rs    ████ 1.31 GiB/s
+simd_json   ░ 0.26 GiB/s
+serde_json  ░ 0.24 GiB/s (baseline)
+```
 
 | Parser | Throughput | vs `serde_json` |
 |:---|:---|:---|
@@ -28,7 +37,30 @@ Measured on **Apple Silicon M4**, release profile, using `criterion` (100 sample
 | `simd-json` | ~0.26 GiB/s | 1.1× faster |
 | `serde_json` | ~0.24 GiB/s | baseline |
 
-### Serialization — Micro Payloads
+---
+
+### Serialization — Micro Payloads (Lower Latency = Better)
+
+**Tiny (3 fields)**
+```
+serde_json  ████████████████████████ 32.5 ns
+sonic_rs    ████████████████ 21.5 ns
+kowito-json ███ 9.88 ns ⭐ FASTEST (3.3× faster)
+```
+
+**Medium (7 fields)**
+```
+serde_json  ████████████████████ 79.3 ns
+sonic_rs    ████████████ 63.2 ns
+kowito-json ███████ 33.8 ns ⭐ FASTEST (2.3× faster)
+```
+
+**Numeric (8 fields)**
+```
+serde_json  ███████████████ 114.4 ns
+sonic_rs    ████████████ 99.0 ns
+kowito-json ██████████ 79.8 ns ⭐ FASTEST (1.4× faster)
+```
 
 | Payload | `serde_json` | `sonic_rs` | **kowito-json** | Gain |
 |:---|:---|:---|:---|:---|
@@ -36,7 +68,23 @@ Measured on **Apple Silicon M4**, release profile, using `criterion` (100 sample
 | Medium — 7 fields | 79.3 ns | 63.2 ns | **33.8 ns** | **2.3×** |
 | Numeric — 8 fields | 114.4 ns | 99.0 ns | **79.8 ns** | **1.4×** |
 
+---
+
 ### Serialization — Hot Loop (1 000 items)
+
+**Latency per Batch**
+```
+serde_json  ███████████████████████████████ 87.1 µs
+sonic_rs    █████████████████ 70.1 µs
+kowito-json ████████ 39.6 µs ⭐ FASTEST (2.2× faster)
+```
+
+**Throughput**
+```
+serde_json  ███ 1.25 GiB/s
+sonic_rs    ████ 1.55 GiB/s
+kowito-json ███████ 2.75 GiB/s ⭐ FASTEST
+```
 
 | Serializer | Latency | Throughput |
 |:---|:---|:---|
@@ -44,7 +92,23 @@ Measured on **Apple Silicon M4**, release profile, using `criterion` (100 sample
 | `sonic_rs` | 70.1 µs | 1.55 GiB/s |
 | `serde_json` | 87.1 µs | 1.25 GiB/s |
 
+---
+
 ### Serialization — Large String (10 KB, SIMD fast-path)
+
+**Latency (Lower = Better)**
+```
+sonic_rs    █ 281 ns ⭐ FASTEST
+kowito-json ██ 370 ns (competitive)
+serde_json  ████████████████ 2542 ns (9× slower)
+```
+
+**Throughput (Higher = Better)**
+```
+sonic_rs    ████████████████████████████ 33.2 GiB/s ⭐ FASTEST
+kowito-json ████████████████████ 25.0 GiB/s
+serde_json  ████ 3.66 GiB/s
+```
 
 | Serializer | Latency | Throughput |
 |:---|:---|:---|
@@ -52,7 +116,34 @@ Measured on **Apple Silicon M4**, release profile, using `criterion` (100 sample
 | **kowito-json** | 370 ns | 25.0 GiB/s |
 | `serde_json` | 2542 ns | 3.66 GiB/s |
 
-> kowito-json leads on all small/medium payloads. sonic_rs edges ahead on pure large-string throughput due to a more specialized escape path.
+---
+
+### 📊 Summary: When to Use Each
+
+| Use Case | Best Choice | Why |
+|:---|:---|:---|
+| **Micro payloads** (< 100 bytes) | **kowito-json** ⭐ | 3.3× speedup, zero-copy design |
+| **Hot-loop batch** (1000+ items) | **kowito-json** ⭐ | 2.2× faster, schema-JIT wins |
+| **Large strings** (10KB+) | `sonic_rs` | Specialized escape SIMD, 33 GiB/s |
+| **General parsing** (all sizes) | **kowito-json** ⭐ | 27× faster than serde_json |
+| **Compatibility** (stable Rust) | `serde_json` | Mature, works on stable |
+
+> **kowito-json dominates micro and hot-loop workloads.** sonic_rs edges ahead only on pure large-string throughput. Choose **kowito-json** for microservices, logging pipelines, and real-time systems.
+
+---
+
+## Feature Comparison
+
+| Feature | kowito-json | sonic_rs | serde_json |
+|:---|:---:|:---:|:---:|
+| **Parsing Speed** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐ |
+| **Serialization** | ⭐⭐⭐⭐⭐ | ⭐⭐⭐⭐ | ⭐⭐⭐ |
+| **Zero-Decode** | ✅ | ❌ | ❌ |
+| **Schema-JIT** | ✅ | ❌ | ❌ |
+| **SIMD String Escape** | ✅ NEON | ✅ AVX2/SSE | ❌ |
+| **Arena Allocator** | ✅ | ❌ | ❌ |
+| **Stable Rust** | ❌ (nightly) | ✅ | ✅ |
+| **Cross-Platform** | ARM NEON | AVX2/portable | ✅ Universal |
 
 ## Installation
 
@@ -69,6 +160,7 @@ Requires **Rust nightly** (uses `portable_simd`):
 [toolchain]
 channel = "nightly"
 ```
+
 
 ## Quick Start
 
