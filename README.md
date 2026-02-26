@@ -16,24 +16,20 @@ Currently optimized for Apple Silicon (M-series / ARM NEON) via Carry-Less Multi
 
 Parsed on Apple Silicon M4 (NEON PMULL optimized). Measurements taken using `criterion` on a 10MB massive JSON payload.
 
-| Parser | Throughput (GiB/s) | Relative Speed |
+| Parser | Throughput (GiB/s) | Relative Speed (vs `serde_json`) |
 | :--- | :--- | :--- |
-| **kowito-json** | **~5.50 GiB/s** | **1x (Baseline)** |
-| `sonic-rs` | ~1.31 GiB/s | ~4.2x Slower |
-| `simd-json` | ~0.27 GiB/s | ~20x Slower |
-| `serde_json` | ~0.24 GiB/s | ~23x Slower |
+| **kowito-json** | **~5.50 GiB/s** | **~23x Faster** |
+| `sonic-rs` | ~1.31 GiB/s | ~5.4x Faster |
+| `simd-json` | ~0.27 GiB/s | ~1.1x Faster |
+| `serde_json` | ~0.24 GiB/s | 1x (Baseline) |
 
-### Performance Comparison
+### Performance Visualization (GiB/s)
 
-```mermaid
-barChart
-    title "JSON Parsing Throughput (GiB/s)"
-    x-axis "Parser"
-    y-axis "Throughput (GiB/s)"
-    "serde_json" : 0.24
-    "simd-json" : 0.27
-    "sonic-rs" : 1.31
-    "kowito-json" : 5.50
+```text
+serde_json  [■] 0.24
+simd-json   [■] 0.27
+sonic-rs    [■■■■■] 1.31
+kowito-json [■■■■■■■■■■■■■■■■■■■■■■■] 5.50
 ```
 
 ## Installation
