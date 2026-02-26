@@ -2,6 +2,10 @@
 name = "kowito-json-derive"
 version = "0.2.1"
 edition = "2024"
+authors = ["Kowito <hi@kowito.com>"]
+description = "Specialized proc-macros for kowito-json's Schema-JIT parsing and serialization."
+repository = "https://github.com/Kowito/kowito-json"
+license = "MIT"
 
 [lib]
 proc-macro = true
