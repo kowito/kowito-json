@@ -10,7 +10,7 @@ pub use arena::Scratchpad;
 pub use string::KString;
 pub use view::KView;
 
-pub use kjson_derive::Kjson;
+pub use kowito_json_derive::Kjson;
 
 /// Example binding utilizing Schema-JIT
 #[derive(Kjson, Default, Debug)]

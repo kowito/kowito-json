@@ -1,5 +1,5 @@
 [package]
-name = "kjson"
+name = "kowito-json"
 version = "0.2.0"
 edition = "2024"
 authors = ["Kowito <hi@kowito.com>"]
@@ -7,10 +7,10 @@ description = "The fastest JSON parser on Earth. Zero-decode, SIMD optimized."
 repository = "https://github.com/Kowito/kowito-json"
 license = "MIT"
 [workspace]
-members = ["kjson-derive"]
+members = ["kowito-json-derive"]
 
 [dependencies]
-kjson-derive = { path = "kjson-derive" }
+kowito-json-derive = { path = "kowito-json-derive" }
 fxhash = "0.2.1"
 pulp = "0.22.2"
 serde = { version = "1.0.228", features = ["derive"] }

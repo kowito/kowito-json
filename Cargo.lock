@@ -361,12 +361,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "kjson"
+name = "kowito-json"
 version = "0.2.0"
 dependencies = [
  "criterion",
  "fxhash",
- "kjson-derive",
+ "kowito-json-derive",
  "pulp",
  "serde",
  "serde_json",
@@ -375,7 +375,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "kjson-derive"
+name = "kowito-json-derive"
 version = "0.2.0"
 dependencies = [
  "proc-macro2",

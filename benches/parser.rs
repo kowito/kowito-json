@@ -1,6 +1,6 @@
 use criterion::{black_box, criterion_group, criterion_main, Criterion, Throughput};
-use kjson::scanner::Scanner;
-use kjson::arena::Scratchpad;
+use kowito_json::scanner::Scanner;
+use kowito_json::arena::Scratchpad;
 
 fn generate_massive_json() -> String {
     let mut s = String::with_capacity(10 * 1024 * 1024);
@@ -58,7 +58,7 @@ fn bench_parsers(c: &mut Criterion) {
     // We pre-allocate the scratchpad just like real-world server thread-locals
     let mut scratchpad = Scratchpad::new(10_000_000); 
 
-    group.bench_function("kjson_scanner_only", |b| {
+    group.bench_function("kowito_json_scanner_only", |b| {
         b.iter(|| {
             let scanner = Scanner::new(json_bytes);
             let tape = scratchpad.get_mut_tape();
@@ -68,7 +68,7 @@ fn bench_parsers(c: &mut Criterion) {
     });
 
     // 5. KJSON / Kowito-JSON (Scanner + Schema-JIT Zero Decode Instantiation)
-    group.bench_function("kjson_schema_jit", |b| {
+    group.bench_function("kowito_json_schema_jit", |b| {
         b.iter(|| {
             let scanner = Scanner::new(json_bytes);
             let tape = scratchpad.get_mut_tape();
@@ -76,11 +76,11 @@ fn bench_parsers(c: &mut Criterion) {
             
             // In a real implementation we would loop over the array elements
             // For this benchmark we simulate extracting the first object
-            let view = kjson::KView::new(json_bytes, tape);
+            let view = kowito_json::KView::new(json_bytes, tape);
             
             // This is the Magic: Instantiating the struct immediately without
             // touching the unused strings or traversing the full tree.
-            let user = kjson::FastUser::from_kview(&view);
+            let user = kowito_json::FastUser::from_kview(&view);
             black_box(user);
         });
     });
