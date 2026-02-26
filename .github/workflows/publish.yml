@@ -1,0 +1,55 @@
+name: Publish to Crates.io
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Auto-version and Publish
+    runs-on: ubuntu-latest
+    if: "!contains(github.event.head_commit.message, '[skip ci]')"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Bump version
+        id: bump
+        run: |
+          # Use python to safely increment patch version in Cargo.toml
+          NEW_VERSION=$(python3 -c "
+          import re
+          with open('Cargo.toml', 'r') as f:
+              content = f.read()
+          version_match = re.search(r'version = \"(\d+)\.(\d+)\.(\d+)\"', content)
+          major, minor, patch = map(int, version_match.groups())
+          new_version = f'{major}.{minor}.{patch + 1}'
+          new_content = re.sub(r'version = \"\d+\.\d+\.\d+\"', f'version = \"{new_version}\"', content, count=1)
+          with open('Cargo.toml', 'w') as f:
+              f.write(new_content)
+          print(new_version)
+          ")
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+      - name: Commit and push changes
+        run: |
+          git config --local user.email "hi@kowito.com"
+          git config --local user.name "Kowito"
+          cargo update
+          git add Cargo.toml Cargo.lock
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.version }} [skip ci]"
+          git push
+
+      - name: Publish to Crates.io
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
+        run: cargo publish --no-verify

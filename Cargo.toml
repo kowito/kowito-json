@@ -2,6 +2,10 @@
 name = "kjson"
 version = "0.2.0"
 edition = "2024"
+authors = ["Kowito <hi@kowito.com>"]
+description = "The fastest JSON parser on Earth. Zero-decode, SIMD optimized."
+repository = "https://github.com/Kowito/kowito-json"
+license = "MIT"
 [workspace]
 members = ["kjson-derive"]
 
