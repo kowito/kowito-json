@@ -2,8 +2,11 @@
 name = "kjson"
 version = "0.1.0"
 edition = "2024"
+[workspace]
+members = ["kowito-derive"]
 
 [dependencies]
+kowito-derive = { path = "kowito-derive" }
 fxhash = "0.2.1"
 pulp = "0.22.2"
 serde = { version = "1.0.228", features = ["derive"] }
