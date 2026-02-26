@@ -3,7 +3,7 @@ use std::simd::prelude::*;
 
 /// The ARM NEON (Apple Silicon) highly optimized scanner
 #[cfg(target_arch = "aarch64")]
-#[target_feature(enable = "neon")]
+#[inline(always)]
 pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
     let mut tape_idx = 0;
     let mut i = 0;
@@ -12,7 +12,6 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
     let mut prev_in_string: u64 = 0;
     
     while i + 32 <= bytes.len() {
-        unsafe { std::intrinsics::prefetch_read_data::<u8, 3>(bytes.as_ptr().add(i + 128)); }
 
         let chunk = u8x32::from_slice(&bytes[i..]);
         
@@ -55,10 +54,8 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
             let tz = active_structurals.trailing_zeros();
             active_structurals &= active_structurals - 1; // clear lowest bit
             
-            if tape_idx < tape.len() {
-                unsafe { *tape.get_unchecked_mut(tape_idx) = (i as u32) + tz; }
-                tape_idx += 1;
-            }
+            unsafe { *tape.get_unchecked_mut(tape_idx) = (i as u32) + tz; }
+            tape_idx += 1;
         }
         
         i += 32;
