@@ -25,18 +25,32 @@ jobs:
       - name: Bump version
         id: bump
         run: |
-          # Use python to safely increment patch version in Cargo.toml
+          # Use python to safely increment patch version in both Cargo.toml files
           NEW_VERSION=$(python3 -c "
           import re
+          def bump_version(path):
+              with open(path, 'r') as f:
+                  content = f.read()
+              version_match = re.search(r'version = \"(\d+)\.(\d+)\.(\d+)\"', content)
+              major, minor, patch = map(int, version_match.groups())
+              new_version = f'{major}.{minor}.{patch + 1}'
+              new_content = re.sub(r'version = \"\d+\.\d+\.\d+\"', f'version = \"{new_version}\"', content, count=1)
+              with open(path, 'w') as f:
+                  f.write(new_content)
+              return new_version
+
+          v1 = bump_version('Cargo.toml')
+          v2 = bump_version('kowito-json-derive/Cargo.toml')
+          
+          # Ensure kowito-json depends on the new version of derive
           with open('Cargo.toml', 'r') as f:
               content = f.read()
-          version_match = re.search(r'version = \"(\d+)\.(\d+)\.(\d+)\"', content)
-          major, minor, patch = map(int, version_match.groups())
-          new_version = f'{major}.{minor}.{patch + 1}'
-          new_content = re.sub(r'version = \"\d+\.\d+\.\d+\"', f'version = \"{new_version}\"', content, count=1)
+          content = re.sub(r'kowito-json-derive = \{ path = \"kowito-json-derive\", version = \"\d+\.\d+\.\d+\" \}', 
+                          f'kowito-json-derive = {{ path = \"kowito-json-derive\", version = \"{v2}\" }}', content)
           with open('Cargo.toml', 'w') as f:
-              f.write(new_content)
-          print(new_version)
+              f.write(content)
+          
+          print(v1)
           ")
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
@@ -45,11 +59,19 @@ jobs:
           git config --local user.email "hi@kowito.com"
           git config --local user.name "Kowito"
           cargo update
-          git add Cargo.toml Cargo.lock
+          git add Cargo.toml Cargo.lock kowito-json-derive/Cargo.toml
           git commit -m "chore: bump version to ${{ steps.bump.outputs.version }} [skip ci]"
           git push
 
-      - name: Publish to Crates.io
+      - name: Publish kowito-json-derive
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
-        run: cargo publish --no-verify
+        run: cargo publish -p kowito-json-derive --no-verify
+
+      - name: Wait for crates.io to index
+        run: sleep 30
+
+      - name: Publish kowito-json
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_TOKEN }}
+        run: cargo publish -p kowito-json --no-verify
