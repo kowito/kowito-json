@@ -1,12 +1,12 @@
 //! # Example 02 - All Supported Primitive Types
 //!
-//! Shows every type that Kjson supports natively for serialization.
+//! Shows every type that KJson supports natively for serialization.
 //!
 //! Run with: `cargo run --example 02_all_types`
 
-use kowito_json_derive::Kjson;
+use kowito_json_derive::KJson;
 
-#[derive(Debug, Kjson)]
+#[derive(Debug, KJson)]
 pub struct Integers {
     pub a: i8,
     pub b: i16,
@@ -20,13 +20,13 @@ pub struct Integers {
     pub j: usize,
 }
 
-#[derive(Debug, Kjson)]
+#[derive(Debug, KJson)]
 pub struct Floats {
     pub x: f32,
     pub y: f64,
 }
 
-#[derive(Debug, Kjson)]
+#[derive(Debug, KJson)]
 pub struct Strings {
     pub plain: String,
     pub with_quotes: String,
@@ -36,7 +36,7 @@ pub struct Strings {
     pub unicode_control: String,
 }
 
-#[derive(Debug, Kjson)]
+#[derive(Debug, KJson)]
 pub struct Booleans {
     pub yes: bool,
     pub no: bool,
@@ -62,7 +62,7 @@ fn main() {
         i: u64::MAX,
         j: 1024,
     };
-    ints.to_kbytes(&mut buf);
+    ints.to_json_bytes(&mut buf);
     print("Integers", &buf);
     buf.clear();
 
@@ -72,7 +72,7 @@ fn main() {
         x: std::f32::consts::PI,
         y: std::f64::consts::PI,
     };
-    floats.to_kbytes(&mut buf);
+    floats.to_json_bytes(&mut buf);
     print("Floats  ", &buf);
     buf.clear();
 
@@ -85,7 +85,7 @@ fn main() {
         with_backslash: "C:\\Users\\Alice".to_string(),
         unicode_control: "\x01\x1F".to_string(), // serialized as \u0001\u001f
     };
-    strings.to_kbytes(&mut buf);
+    strings.to_json_bytes(&mut buf);
     print("Strings ", &buf);
     buf.clear();
 
@@ -94,6 +94,6 @@ fn main() {
         yes: true,
         no: false,
     };
-    bools.to_kbytes(&mut buf);
+    bools.to_json_bytes(&mut buf);
     print("Booleans", &buf);
 }

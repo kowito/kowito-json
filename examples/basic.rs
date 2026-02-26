@@ -1,9 +1,9 @@
 use kowito_json::KView;
 use kowito_json::arena::Scratchpad;
 use kowito_json::scanner::Scanner;
-use kowito_json_derive::Kjson;
+use kowito_json_derive::KJson;
 
-#[derive(Debug, Kjson)]
+#[derive(Debug, KJson)]
 pub struct User {
     pub id: i64,
     pub name: String,
@@ -25,7 +25,7 @@ fn main() {
     let _view = KView::new(json_bytes, tape);
 
     // 4. Instantly bind to a struct
-    // Note: Assuming `Kjson` macro generates `from_kview`. We should test it.
+    // Note: Assuming `KJson` macro generates `from_kview`. We should test it.
     // let user = User::from_kview(&view);
     // println!("Parsed User: {:?}", user);
 }

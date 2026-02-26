@@ -1,13 +1,13 @@
-use kowito_json::Kjson;
+use kowito_json::KJson;
 use std::borrow::Cow;
 
-#[derive(Kjson, Debug, Default)]
+#[derive(KJson, Debug, Default)]
 struct Child {
     pub id: i32,
     pub name: String,
 }
 
-#[derive(Kjson, Debug, Default)]
+#[derive(KJson, Debug, Default)]
 struct Parent {
     pub child: Child,
     pub tags: Vec<String>,
@@ -28,7 +28,7 @@ fn test_nested_serialization() {
     };
 
     let mut buf = Vec::new();
-    parent.to_kbytes(&mut buf);
+    parent.to_json_bytes(&mut buf);
     let json = String::from_utf8(buf).unwrap();
 
     // Check structural correctness
@@ -51,14 +51,14 @@ fn test_option_null() {
     };
 
     let mut buf = Vec::new();
-    parent.to_kbytes(&mut buf);
+    parent.to_json_bytes(&mut buf);
     let json = String::from_utf8(buf).unwrap();
 
     assert!(json.contains(r#""age":null"#));
     let _: serde_json::Value = serde_json::from_str(&json).unwrap();
 }
 
-#[derive(Kjson, Debug, Default)]
+#[derive(KJson, Debug, Default)]
 struct StringTest {
     pub data: String,
 }
@@ -81,7 +81,7 @@ fn test_string_escaping_edge_cases() {
             data: case.to_string(),
         };
         let mut buf = Vec::new();
-        t.to_kbytes(&mut buf);
+        t.to_json_bytes(&mut buf);
         let json = String::from_utf8(buf).unwrap();
 
         // Use serde_json to verify the escaped output
@@ -102,7 +102,7 @@ fn test_long_string_simd_fast_path() {
         data: long_safe.clone(),
     };
     let mut buf = Vec::new();
-    t1.to_kbytes(&mut buf);
+    t1.to_json_bytes(&mut buf);
     let json1 = String::from_utf8(buf.clone()).unwrap();
     let p1: serde_json::Value = serde_json::from_str(&json1).unwrap();
     assert_eq!(p1["data"], long_safe);
@@ -111,7 +111,7 @@ fn test_long_string_simd_fast_path() {
         data: long_with_escape.clone(),
     };
     buf.clear();
-    t2.to_kbytes(&mut buf);
+    t2.to_json_bytes(&mut buf);
     let json2 = String::from_utf8(buf.clone()).unwrap();
     let p2: serde_json::Value = serde_json::from_str(&json2).unwrap();
     assert_eq!(p2["data"], long_with_escape);

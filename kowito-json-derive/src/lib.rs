@@ -3,7 +3,7 @@ use quote::quote;
 use syn::{Data, DataStruct, DeriveInput, Fields, Type, parse_macro_input};
 
 // A simple compile-time hash function to match the FxHash style
-fn compute_hash(s: &str) -> u64 {
+fn field_name_hash(s: &str) -> u64 {
     let mut hash: u64 = 0;
     for &b in s.as_bytes() {
         hash = (hash ^ (b as u64)).wrapping_mul(0x517cc1b727220a95);
@@ -16,7 +16,7 @@ fn compute_hash(s: &str) -> u64 {
 /// most common ones by their last path segment name. Unknown types that
 /// implement `Serialize` will still work correctly at runtime; this check only
 /// drives compile-time capacity estimates.
-fn is_str_like(ty: &Type) -> bool {
+fn is_string_type(ty: &Type) -> bool {
     match ty {
         Type::Path(tp) => {
             let seg = tp.path.segments.last().map(|s| s.ident.to_string());
@@ -25,7 +25,7 @@ fn is_str_like(ty: &Type) -> bool {
                 Some("String" | "str" | "Cow" | "KString" | "Box")
             )
         }
-        Type::Reference(r) => is_str_like(&r.elem),
+        Type::Reference(r) => is_string_type(&r.elem),
         _ => false,
     }
 }
@@ -34,10 +34,10 @@ fn is_str_like(ty: &Type) -> bool {
 /// - strings: 16 bytes (typical short value + quotes)
 /// - numbers/bools: 8 bytes
 fn value_capacity_estimate(ty: &Type) -> usize {
-    if is_str_like(ty) { 18 } else { 8 }
+    if is_string_type(ty) { 18 } else { 8 }
 }
 
-#[proc_macro_derive(Kjson)]
+#[proc_macro_derive(KJson)]
 pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -61,7 +61,7 @@ pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
         for (i, field) in fields_named.named.iter().enumerate() {
             let field_ident = field.ident.as_ref().unwrap();
             let field_name_str = field_ident.to_string();
-            let field_hash = compute_hash(&field_name_str);
+            let field_hash = field_name_hash(&field_name_str);
 
             generated_fields.push(quote! {
                 #field_hash => {
@@ -90,7 +90,7 @@ pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
             // Accumulate static capacity (prefix bytes are known at expand time)
             static_cap += prefix.len();
 
-            if is_str_like(&field.ty) {
+            if is_string_type(&field.ty) {
                 dynamic_cap_stmts.push(quote! {
                     self.#field_ident.len() * 6 + 2
                 });
@@ -154,7 +154,7 @@ pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
             /// capacity so the hot loop below never reallocates for typical
             /// small payloads.
             #[inline]
-            pub fn to_kbytes(&self, buf: &mut Vec<u8>) {
+            pub fn to_json_bytes(&self, buf: &mut Vec<u8>) {
                 let old_len = buf.len();
                 let mut dynamic_cap = 0;
                 #(
@@ -175,7 +175,7 @@ pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
         impl kowito_json::serialize::Serialize for #name {
             #[inline(always)]
             fn serialize(&self, buf: &mut Vec<u8>) {
-                self.to_kbytes(buf);
+                self.to_json_bytes(buf);
             }
         }
 

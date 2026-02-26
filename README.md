@@ -58,9 +58,9 @@ kowito-json-derive = "0.2.1"
 ```rust
 use kowito_json::{KView, Scratchpad};
 use kowito_json::scanner::Scanner;
-use kowito_json_derive::Kjson;
+use kowito_json_derive::KJson;
 
-#[derive(Debug, Kjson)]
+#[derive(Debug, KJson)]
 struct User {
     id: i64,
     name: String,
@@ -80,7 +80,7 @@ fn main() {
 
     // 2. Serialize at memory-bandwidth speeds
     let mut out_buf = Vec::with_capacity(128);
-    user.to_kbytes(&mut out_buf);
+    user.to_json_bytes(&mut out_buf);
     println!("Serialized: {}", String::from_utf8_lossy(&out_buf));
 }
 ```
@@ -89,16 +89,16 @@ fn main() {
 
 ### Nested Structs
 
-The `Kjson` derive macro automatically generates optimized templates for nested types.
+The `KJson` derive macro automatically generates optimized templates for nested types.
 
 ```rust
-#[derive(Kjson)]
+#[derive(KJson)]
 pub struct Address {
     pub city: String,
     pub zip: u32,
 }
 
-#[derive(Kjson)]
+#[derive(KJson)]
 pub struct Profile {
     pub user_id: u64,
     pub address: Address,
@@ -115,14 +115,14 @@ let items = vec![user1, user2, user3];
 let mut buffer = Vec::with_capacity(1024 * 10);
 
 for item in items {
-    item.to_kbytes(&mut buffer);
+    item.to_json_bytes(&mut buffer);
     buffer.push(b'\n'); // Newline delimited JSON (NDJSON)
 }
 ```
 
 ### Custom Serialization
 
-While `#[derive(Kjson)]` is recommended for maximum performance, you can manually implement the `Serialize` trait.
+While `#[derive(KJson)]` is recommended for maximum performance, you can manually implement the `Serialize` trait.
 
 ```rust
 use kowito_json::serialize::{Serialize, write_str_escape, write_value};
@@ -150,7 +150,7 @@ impl Serialize for CustomLog {
 Most parsers build an AST or evaluate string quotes using branching logic. `kowito-json` uses SIMD Carry-Less Multiplication (Polynomial Math) to trace out string blocks parity in a single CPU cycle without branching. This mathematically perfect parsing removes branch mispredictions, maximizing the throughput of modern superscalar processors.
 
 ### Serialization
-`kowito-json` uses **Schema-JIT Serialization**. Instead of using generic reflection or slow `std::fmt` traits, the `Kjson` macro generates a specialized `to_kbytes` method at compile-time. This method:
+`kowito-json` uses **Schema-JIT Serialization**. Instead of using generic reflection or slow `std::fmt` traits, the `KJson` macro generates a specialized `to_json_bytes` method at compile-time. This method:
 - Interleaves field keys and structural characters as static byte slices (`memcpy` from RO data).
 - Uses `itoa` and `ryu` for branchless numeric formatting.
 - Employs **ARM NEON SIMD** processing to scan 16-byte blocks for escape characters in a single cycle.

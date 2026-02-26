@@ -14,10 +14,10 @@ pub use arena::Scratchpad;
 pub use string::KString;
 pub use view::KView;
 
-pub use kowito_json_derive::Kjson;
+pub use kowito_json_derive::KJson;
 
 /// Example binding utilizing Schema-JIT
-#[derive(kowito_json_derive::Kjson, Default, Debug)]
+#[derive(kowito_json_derive::KJson, Default, Debug)]
 pub struct FastUser {
     pub id: u64,
     pub name: String,

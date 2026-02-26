@@ -1,11 +1,11 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use kowito_json_derive::Kjson;
+use kowito_json_derive::KJson;
 use std::hint::black_box;
 
 // ---------------------------------------------------------------------------
 // Payload A – tiny HTTP-style response (3 fields)
 // ---------------------------------------------------------------------------
-#[derive(Kjson, Debug, serde::Serialize)]
+#[derive(KJson, Debug, serde::Serialize)]
 pub struct MessageResponse {
     pub message: String,
     pub status: i32,
@@ -15,7 +15,7 @@ pub struct MessageResponse {
 // ---------------------------------------------------------------------------
 // Payload B – medium user record (7 fields, mixed types)
 // ---------------------------------------------------------------------------
-#[derive(Kjson, Debug, serde::Serialize)]
+#[derive(KJson, Debug, serde::Serialize)]
 pub struct UserRecord {
     pub id: u64,
     pub username: String,
@@ -29,7 +29,7 @@ pub struct UserRecord {
 // ---------------------------------------------------------------------------
 // Payload C – metrics / telemetry (all numeric, 8 fields)
 // ---------------------------------------------------------------------------
-#[derive(Kjson, Debug, serde::Serialize)]
+#[derive(KJson, Debug, serde::Serialize)]
 pub struct Metrics {
     pub requests: u64,
     pub errors: u64,
@@ -41,7 +41,7 @@ pub struct Metrics {
     pub timestamp: i64,
 }
 
-#[derive(Kjson, Debug, serde::Serialize)]
+#[derive(KJson, Debug, serde::Serialize)]
 pub struct LongStringRecord {
     pub id: u64,
     pub data: String,
@@ -99,7 +99,7 @@ macro_rules! bench_trio {
         let mut buf = Vec::<u8>::with_capacity(512);
 
         // Measure serialized byte length for throughput reporting
-        $val.to_kbytes(&mut buf);
+        $val.to_json_bytes(&mut buf);
         $group.throughput(Throughput::Bytes(buf.len() as u64));
 
         $group.bench_with_input(BenchmarkId::new("serde_json", $id), &$val, |b, v| {
@@ -121,7 +121,7 @@ macro_rules! bench_trio {
         $group.bench_with_input(BenchmarkId::new("kowito_json_jit", $id), &$val, |b, v| {
             b.iter(|| {
                 buf.clear();
-                v.to_kbytes(&mut buf);
+                v.to_json_bytes(&mut buf);
                 black_box(buf.as_slice());
             });
         });
@@ -176,7 +176,7 @@ fn bench_hot_loop(c: &mut Criterion) {
     let mut buf = Vec::<u8>::with_capacity(256 * N);
     // Measure "output size per batch" for throughput
     for item in &items {
-        item.to_kbytes(&mut buf);
+        item.to_json_bytes(&mut buf);
     }
     group.throughput(Throughput::Bytes(buf.len() as u64));
     buf.clear();
@@ -205,7 +205,7 @@ fn bench_hot_loop(c: &mut Criterion) {
         b.iter(|| {
             buf.clear();
             for item in &items {
-                item.to_kbytes(&mut buf);
+                item.to_json_bytes(&mut buf);
             }
             black_box(buf.as_slice());
         });

@@ -8,7 +8,7 @@ use core::arch::asm;
 /// # Safety
 /// This function is unsafe because it emits undocumented AMX instructions that are not stable.
 #[cfg(target_arch = "aarch64")]
-pub unsafe fn strip_whitespace_amx(_bytes: &mut [u8]) -> usize {
+pub unsafe fn scan_amx(_bytes: &mut [u8]) -> usize {
     // 1. We must configure the AMX state.
     // The undocumented instruction `0x00201420` enables the AMX coprocessor.
     unsafe {
@@ -59,6 +59,6 @@ pub unsafe fn strip_whitespace_amx(_bytes: &mut [u8]) -> usize {
 }
 
 #[cfg(not(target_arch = "aarch64"))]
-pub unsafe fn strip_whitespace_amx(_bytes: &mut [u8]) -> usize {
-    unreachable!("strip_whitespace_amx called on non-aarch64 architecture")
+pub unsafe fn scan_amx(_bytes: &mut [u8]) -> usize {
+    unreachable!("scan_amx called on non-aarch64 architecture")
 }

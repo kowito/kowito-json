@@ -1,15 +1,15 @@
 //! # Example 01 - Basic Serialization with Derive Macro
 //!
 //! Demonstrates the simplest way to serialize a Rust struct to JSON
-//! using the `#[derive(Kjson)]` macro.
+//! using the `#[derive(KJson)]` macro.
 //!
 //! Run with: `cargo run --example 01_basic_serialize`
 
-use kowito_json_derive::Kjson;
+use kowito_json_derive::KJson;
 
-// Step 1: Derive Kjson on your struct.
+// Step 1: Derive KJson on your struct.
 // All fields must implement `Serialize` (primitives, String, bool, etc.)
-#[derive(Debug, Kjson)]
+#[derive(Debug, KJson)]
 pub struct User {
     pub id: u64,
     pub name: String,
@@ -28,18 +28,18 @@ fn main() {
     // Step 2: Allocate an output buffer.
     let mut buf = Vec::new();
 
-    // Step 3: Call the generated `to_kbytes` method.
-    user.to_kbytes(&mut buf);
+    // Step 3: Call the generated `to_json_bytes` method.
+    user.to_json_bytes(&mut buf);
 
     // Step 4: Convert to a UTF-8 string and print.
     let json = std::str::from_utf8(&buf).unwrap();
     println!("Serialized: {json}");
     // Output: {"id":1,"name":"Alice","score":98.6,"is_active":true}
 
-    // Appending to an existing buffer is zero-cost: to_kbytes preserves prior contents.
+    // Appending to an existing buffer is zero-cost: to_json_bytes preserves prior contents.
     let prefix = b"data=";
     let mut out = prefix.to_vec();
-    user.to_kbytes(&mut out);
+    user.to_json_bytes(&mut out);
     println!("Appended:   {}", std::str::from_utf8(&out).unwrap());
     // Output: data={"id":1,"name":"Alice","score":98.6,"is_active":true}
 }

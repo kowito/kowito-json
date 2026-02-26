@@ -5,13 +5,13 @@
 //!
 //! Key techniques:
 //!   - Pre-reserve the output buffer for the whole batch
-//!   - Call `to_kbytes` in a loop — no allocations in the hot path
+//!   - Call `to_json_bytes` in a loop — no allocations in the hot path
 //!
 //! Run with: `cargo run --example 06_hot_loop`
 
-use kowito_json_derive::Kjson;
+use kowito_json_derive::KJson;
 
-#[derive(Debug, Kjson)]
+#[derive(Debug, KJson)]
 pub struct LogEntry {
     pub timestamp: u64,
     pub level: String,
@@ -20,7 +20,7 @@ pub struct LogEntry {
     pub latency_us: u32,
 }
 
-#[derive(Debug, Kjson)]
+#[derive(Debug, KJson)]
 pub struct MetricPoint {
     pub name: String,
     pub value: f64,
@@ -49,7 +49,7 @@ fn main() {
 
         let mut buf = Vec::with_capacity(entries.len() * 128);
         for entry in &entries {
-            entry.to_kbytes(&mut buf);
+            entry.to_json_bytes(&mut buf);
             buf.push(b'\n'); // newline delimiter
         }
 
@@ -91,7 +91,7 @@ fn main() {
             if i > 0 {
                 buf.push(b',');
             }
-            pt.to_kbytes(&mut buf);
+            pt.to_json_bytes(&mut buf);
         }
         buf.push(b']');
 
@@ -119,7 +119,7 @@ fn main() {
                 value: val,
                 ts: 9999,
             };
-            pt.to_kbytes(&mut buf);
+            pt.to_json_bytes(&mut buf);
             // Simulate sending over a wire
             println!("  → {}", std::str::from_utf8(&buf).unwrap());
         }

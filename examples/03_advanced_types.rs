@@ -6,18 +6,18 @@
 //! Run with: `cargo run --example 03_advanced_types`
 
 use kowito_json::serialize::Serialize;
-use kowito_json_derive::Kjson;
+use kowito_json_derive::KJson;
 use std::borrow::Cow;
 
 // --- Nested structs ---
-#[derive(Debug, Kjson)]
+#[derive(Debug, KJson)]
 pub struct Address {
     pub street: String,
     pub city: String,
     pub zip: String,
 }
 
-#[derive(Debug, Kjson)]
+#[derive(Debug, KJson)]
 pub struct Company {
     pub name: String,
     pub employee_count: u32,
@@ -82,23 +82,23 @@ fn main() {
     print("&[u8] slice:", &buf);
     buf.clear();
 
-    // --- Nested: Address uses to_kbytes from derive macro ---
+    // --- Nested: Address uses to_json_bytes from derive macro ---
     let addr = Address {
         street: "123 Main St".to_string(),
         city: "San Francisco".to_string(),
         zip: "94102".to_string(),
     };
-    addr.to_kbytes(&mut buf);
+    addr.to_json_bytes(&mut buf);
     print("Address:", &buf);
     buf.clear();
 
-    // --- Derived struct that holds a nested derived struct via to_kbytes ---
+    // --- Derived struct that holds a nested derived struct via to_json_bytes ---
     // Note: nested struct fields work when they implement Serialize
     let company = Company {
         name: "Kowito Inc.".to_string(),
         employee_count: 42,
     };
-    company.to_kbytes(&mut buf);
+    company.to_json_bytes(&mut buf);
     print("Company:", &buf);
     buf.clear();
 }
