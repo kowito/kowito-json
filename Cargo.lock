@@ -362,7 +362,7 @@ dependencies = [
 
 [[package]]
 name = "kjson"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "criterion",
  "fxhash",
@@ -376,7 +376,7 @@ dependencies = [
 
 [[package]]
 name = "kjson-derive"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "proc-macro2",
  "quote",

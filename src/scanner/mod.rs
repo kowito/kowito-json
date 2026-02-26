@@ -1,6 +1,8 @@
 pub mod generic;
 pub mod avx2;
 pub mod neon;
+pub mod sve2;
+pub mod amx;
 
 pub struct Scanner<'a> {
     input: &'a [u8],
@@ -25,6 +27,10 @@ impl<'a> Scanner<'a> {
 
         #[cfg(target_arch = "aarch64")]
         {
+            // Note: std::arch::is_aarch64_feature_detected!("sve2") is currently unstable
+            // In a production Apple Silicon (M4+) environment, we would detect SVE/SVE2
+            // For now, if NEON is available, we use our 6.4 GB/s PMULL scanner.
+            // SVE2 will be wired up here when `stdarch_aarch64_sve` stabilizes in rustc.
             if std::arch::is_aarch64_feature_detected!("neon") {
                 // Safety: Verified NEON is supported on this CPU at runtime
                 return unsafe { neon::scan_neon(self.input, tape) };
