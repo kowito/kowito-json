@@ -1,3 +1,5 @@
+#![feature(portable_simd)]
+
 pub mod arena;
 pub mod scanner;
 pub mod string;

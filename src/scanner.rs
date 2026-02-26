@@ -14,13 +14,92 @@ impl<'a> Scanner<'a> {
     /// Scan the entire input and build the tape inside the provided slice.
     /// Returns the number of tape elements written.
     pub fn scan(&self, tape: &mut [u32]) -> usize {
-        // Initial basic implementation without SIMD, to set up the API.
-        // We will add SIMD later.
         let mut tape_idx = 0;
         let mut in_string = false;
         let mut escape = false;
 
-        for (i, &b) in self.input.iter().enumerate() {
+        let mut i = 0;
+        let bytes = self.input;
+
+        use std::simd::prelude::*;
+
+        while i + 32 <= bytes.len() {
+            let chunk = u8x32::from_slice(&bytes[i..]);
+
+            if in_string {
+                let m_quote = chunk.simd_eq(u8x32::splat(b'"')).to_bitmask();
+                let m_esc = chunk.simd_eq(u8x32::splat(b'\\')).to_bitmask();
+
+                if m_quote == 0 && m_esc == 0 && !escape {
+                    i += 32;
+                    continue;
+                }
+
+                // Fallback scalar for string bodies if there are quotes or escapes.
+                let end = i + 32;
+                while i < end {
+                    let b = bytes[i];
+                    if escape {
+                        escape = false;
+                    } else if b == b'\\' {
+                        escape = true;
+                    } else if b == b'"' {
+                        in_string = false;
+                        if tape_idx < tape.len() {
+                            tape[tape_idx] = i as u32; // End of string quote
+                            tape_idx += 1;
+                        }
+                        i += 1;
+                        break; // exit scalar loop back to SIMD
+                    }
+                    i += 1;
+                }
+            } else {
+                let m_quote = chunk.simd_eq(u8x32::splat(b'"')).to_bitmask();
+                let m_lcb = chunk.simd_eq(u8x32::splat(b'{')).to_bitmask();
+                let m_rcb = chunk.simd_eq(u8x32::splat(b'}')).to_bitmask();
+                let m_lsb = chunk.simd_eq(u8x32::splat(b'[')).to_bitmask();
+                let m_rsb = chunk.simd_eq(u8x32::splat(b']')).to_bitmask();
+                let m_col = chunk.simd_eq(u8x32::splat(b':')).to_bitmask();
+                let m_com = chunk.simd_eq(u8x32::splat(b',')).to_bitmask();
+
+                let mut structurals = m_quote | m_lcb | m_rcb | m_lsb | m_rsb | m_col | m_com;
+
+                if structurals == 0 {
+                    i += 32;
+                    continue;
+                }
+
+                // Process bitmask efficiently
+                while structurals != 0 {
+                    let tz = structurals.trailing_zeros();
+                    structurals &= structurals - 1; // clear lowest set bit
+                    let pos = i + tz as usize;
+                    
+                    if bytes[pos] == b'"' {
+                        in_string = true;
+                        if tape_idx < tape.len() {
+                            tape[tape_idx] = pos as u32;
+                            tape_idx += 1;
+                        }
+                        i = pos + 1;
+                        break; // back to main loop to handle string parsing
+                    } else {
+                        if tape_idx < tape.len() {
+                            tape[tape_idx] = pos as u32;
+                            tape_idx += 1;
+                        }
+                    }
+                }
+                if !in_string {
+                    i += 32;
+                }
+            }
+        }
+
+        // Tail processing for leftover bytes
+        while i < bytes.len() {
+            let b = bytes[i];
             if in_string {
                 if escape {
                     escape = false;
@@ -29,7 +108,7 @@ impl<'a> Scanner<'a> {
                 } else if b == b'"' {
                     in_string = false;
                     if tape_idx < tape.len() {
-                        tape[tape_idx] = i as u32; // End of string quote
+                        tape[tape_idx] = i as u32;
                         tape_idx += 1;
                     }
                 }
@@ -38,20 +117,22 @@ impl<'a> Scanner<'a> {
                     b'"' => {
                         in_string = true;
                         if tape_idx < tape.len() {
-                            tape[tape_idx] = i as u32; // Start of string quote
+                            tape[tape_idx] = i as u32;
                             tape_idx += 1;
                         }
                     }
                     b'{' | b'}' | b'[' | b']' | b':' | b',' => {
                         if tape_idx < tape.len() {
-                            tape[tape_idx] = i as u32; // Structural character
+                            tape[tape_idx] = i as u32;
                             tape_idx += 1;
                         }
                     }
                     _ => {}
                 }
             }
+            i += 1;
         }
+
         tape_idx
     }
 }
