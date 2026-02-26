@@ -17,14 +17,30 @@ pub unsafe fn strip_whitespace_amx(bytes: &mut [u8]) -> usize {
 
     // 2. We use undocumented AMX load instructions to pull 64 bytes of our JSON into the X register
     // and 64 bytes of the whitespace character mask (` `, `\n`, `\t`, `\r`) into the Y register.
-    // 
-    // `0x002010...` -> AMX LDX
-    // `0x002012...` -> AMX LDY
+    // Based on `corsix/amx`, AMX instructions are encoded as A64 instructions (0x00201000 base).
+    // Opcode 0 = LDX, Opcode 1 = LDY, Opcode 14 = MAC16.
     
-    // 3. We execute the 16-bit Matrix Multiply MAC16
-    // `0x00201...` -> AMX MAC16 (Outer Product)
-    // The outer product of a 64-byte JSON vector with a 4-byte whitespace mask instantly tells us
-    // the locations of all whitespace over a 256-byte area in a single matrix operation.
+    // As a demonstration of Phase 6 capability, we will emit the raw `.inst` for LDX (Opcode 0).
+    // The A64 encoding formula for AMX is roughly: `0x00201000 | (opcode << 5) | register`
+    unsafe {
+        asm!(
+            ".inst 0x00201000", // LDX (Opcode 0, Reg 0)
+            options(nostack, preserves_flags)
+        );
+        asm!(
+            ".inst 0x00201020", // LDY (Opcode 1, Reg 0 -> 1 << 5 = 0x20)
+            options(nostack, preserves_flags)
+        );
+    }
+    
+    // 3. We execute the 16-bit Matrix Multiply MAC16 (Opcode 14 -> 14 << 5 = 280 = 0x118)
+    // 0x00201000 | 0x118 = 0x00201118
+    unsafe {
+        asm!(
+            ".inst 0x00201118", // MAC16
+            options(nostack, preserves_flags)
+        );
+    }
     
     // 4. Disable AMX
     // `0x00201420`
