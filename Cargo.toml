@@ -1,0 +1,16 @@
+[package]
+name = "kjson"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+fxhash = "0.2.1"
+pulp = "0.22.2"
+serde = { version = "1.0.228", features = ["derive"] }
+
+[dev-dependencies]
+criterion = "0.8.2"
+
+[[bench]]
+name = "parser"
+harness = false
