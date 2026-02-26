@@ -41,6 +41,12 @@ pub struct Metrics {
     pub timestamp: i64,
 }
 
+#[derive(Kjson, Debug, serde::Serialize)]
+pub struct LongStringRecord {
+    pub id: u64,
+    pub data: String,
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -75,6 +81,14 @@ fn numeric_payload() -> Metrics {
         mem_bytes: 1_073_741_824,
         timestamp: 1_740_000_000,
     }
+}
+
+fn long_string_payload(size: usize) -> LongStringRecord {
+    let mut data = String::with_capacity(size);
+    for i in 0..size {
+        data.push((b'a' + (i % 26) as u8) as char);
+    }
+    LongStringRecord { id: 1, data }
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +126,18 @@ macro_rules! bench_trio {
             });
         });
     }};
+}
+
+// ---------------------------------------------------------------------------
+// Benchmark: Large String Escaping (Tests SIMD)
+// ---------------------------------------------------------------------------
+fn bench_large_string(c: &mut Criterion) {
+    let mut group = c.benchmark_group("Large-String Serialization (SIMD)");
+    
+    // 10 KB of safe characters to hit the SIMD fast-path
+    bench_trio!(group, "10kb_safe", long_string_payload(10_000));
+    
+    group.finish();
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +212,6 @@ fn bench_hot_loop(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_micro, bench_hot_loop);
+criterion_group!(benches, bench_micro, bench_hot_loop, bench_large_string);
 criterion_main!(benches);
 

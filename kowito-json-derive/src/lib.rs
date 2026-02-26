@@ -12,9 +12,9 @@ fn compute_hash(s: &str) -> u64 {
 }
 
 /// Returns `true` when the type is a string-like type that needs JSON quotes
-/// provided by `FastWrite` (String, &str, str, Cow, KString, …). We detect the
+/// provided by `Serialize` (String, &str, str, Cow, KString, …). We detect the
 /// most common ones by their last path segment name. Unknown types that
-/// implement `FastWrite` will still work correctly at runtime; this check only
+/// implement `Serialize` will still work correctly at runtime; this check only
 /// drives compile-time capacity estimates.
 fn is_str_like(ty: &Type) -> bool {
     match ty {
@@ -42,12 +42,12 @@ pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
     let mut generated_fields = Vec::new();
     let mut fields_init = Vec::new();
     let mut serialize_stmts = Vec::new();
+    let mut dynamic_cap_stmts = Vec::new();
 
     // Compile-time capacity: we know every static key prefix byte exactly.
     // static_cap  = 2 (`{}`) + sum over fields of (comma + `"key":`)
     // dynamic_cap = rough estimate for values
     let mut static_cap: usize = 2; // opening `{` + closing `}`
-    let mut dynamic_cap: usize = 0;
 
     if let Data::Struct(data_struct) = &input.data {
         if let Fields::Named(fields_named) = &data_struct.fields {
@@ -83,7 +83,15 @@ pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
 
                 // Accumulate static capacity (prefix bytes are known at expand time)
                 static_cap += prefix.len();
-                dynamic_cap += value_capacity_estimate(&field.ty);
+ 
+                if is_str_like(&field.ty) {
+                    dynamic_cap_stmts.push(quote! {
+                        self.#field_ident.len() * 6 + 2
+                    });
+                } else {
+                    let cap = value_capacity_estimate(&field.ty);
+                    dynamic_cap_stmts.push(quote! { #cap });
+                }
 
                 let prefix_bytes = syn::LitByteStr::new(
                     prefix.as_bytes(),
@@ -92,20 +100,27 @@ pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
                 let is_last = i == total_fields - 1;
 
                 serialize_stmts.push(quote! {
-                    // Static key prefix — single memcpy from read-only data
-                    buf.extend_from_slice(#prefix_bytes);
-                    // Dynamic value — dispatched through FastWrite (itoa / ryu / escape)
-                    kowito_json::serialize::write_value(&self.#field_ident, buf);
+                    {
+                        std::ptr::copy_nonoverlapping(#prefix_bytes.as_ptr(), curr, #prefix_bytes.len());
+                        curr = curr.add(#prefix_bytes.len());
+                        curr = kowito_json::serialize::write_value_raw(&self.#field_ident, curr);
+                        curr
+                    }
                 });
 
                 if is_last {
-                    serialize_stmts.push(quote! { buf.push(b'}'); });
+                    serialize_stmts.push(quote! { 
+                        {
+                            *curr = b'}';
+                            curr.add(1)
+                        }
+                    });
                 }
+
             }
         }
     }
 
-    let total_capacity = static_cap + dynamic_cap;
 
     let expanded = quote! {
         impl #name {
@@ -131,7 +146,7 @@ pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
             ///   stored in the read-only data segment — no heap allocation.
             /// - Integer fields use `itoa` (lookup-table based, branchless).
             /// - Float fields use `ryu` (Grisu3/Dragon4 — shortest round-trip).
-            /// - String fields use the lookup-table escape fast-path in
+            /// - String fields use the NEON SIMD escape fast-path in
             ///   `kowito_json::serialize::write_str_escape`.
             ///
             /// A single `reserve` call at the top pre-allocates the estimated
@@ -139,19 +154,37 @@ pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
             /// small payloads.
             #[inline]
             pub fn to_kbytes(&self, buf: &mut Vec<u8>) {
-                // Pre-allocate: static template bytes + rough value estimate.
-                // Both numbers are known at compile time.
-                buf.reserve(#total_capacity);
+                let old_len = buf.len();
+                let mut dynamic_cap = 0;
                 #(
-                    #serialize_stmts
+                    dynamic_cap += #dynamic_cap_stmts;
                 )*
+                buf.reserve(#static_cap + dynamic_cap);
+                unsafe {
+                    let mut curr = buf.as_mut_ptr().add(old_len);
+                    #(
+                        curr = #serialize_stmts;
+                    )*
+                    buf.set_len(curr.offset_from(buf.as_ptr()) as usize);
+                }
+            }
+
+        }
+
+        impl kowito_json::serialize::Serialize for #name {
+            #[inline(always)]
+            fn serialize(&self, buf: &mut Vec<u8>) {
+                self.to_kbytes(buf);
             }
         }
 
-        impl kowito_json::serialize::FastWrite for #name {
+        impl kowito_json::serialize::SerializeRaw for #name {
             #[inline(always)]
-            fn write_fast(&self, buf: &mut Vec<u8>) {
-                self.to_kbytes(buf);
+            unsafe fn serialize_raw(&self, mut curr: *mut u8) -> *mut u8 {
+                #(
+                    curr = #serialize_stmts;
+                )*
+                curr
             }
         }
     };

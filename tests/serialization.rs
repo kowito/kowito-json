@@ -54,3 +54,55 @@ fn test_option_null() {
     assert!(json.contains(r#""age":null"#));
     let _: serde_json::Value = serde_json::from_str(&json).unwrap();
 }
+
+#[derive(Kjson, Debug, Default)]
+struct StringTest {
+    pub data: String,
+}
+
+#[test]
+fn test_string_escaping_edge_cases() {
+    let cases = vec![
+        "normal",
+        "quote \"",
+        "backslash \\",
+        "newline \n",
+        "tab \t",
+        "control \x01\x1f",
+        "mixed \" \\ \n \t \x0C",
+        "Unicode: 🦀, 你好",
+    ];
+
+    for case in cases {
+        let t = StringTest { data: case.to_string() };
+        let mut buf = Vec::new();
+        t.to_kbytes(&mut buf);
+        let json = String::from_utf8(buf).unwrap();
+        
+        // Use serde_json to verify the escaped output
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed["data"], case, "Failed for case: {:?}", case);
+    }
+}
+
+#[test]
+fn test_long_string_simd_fast_path() {
+    // 64-byte string with no escapes to trigger SIMD loop multiple times
+    let long_safe = "this_is_a_very_long_string_that_should_not_require_any_escaping_".to_string();
+    // 64-byte string with an escape at the end
+    let long_with_escape = "this_is_a_very_long_string_that_should_not_require_any_escaping_\"".to_string();
+
+    let t1 = StringTest { data: long_safe.clone() };
+    let mut buf = Vec::new();
+    t1.to_kbytes(&mut buf);
+    let json1 = String::from_utf8(buf.clone()).unwrap();
+    let p1: serde_json::Value = serde_json::from_str(&json1).unwrap();
+    assert_eq!(p1["data"], long_safe);
+
+    let t2 = StringTest { data: long_with_escape.clone() };
+    buf.clear();
+    t2.to_kbytes(&mut buf);
+    let json2 = String::from_utf8(buf.clone()).unwrap();
+    let p2: serde_json::Value = serde_json::from_str(&json2).unwrap();
+    assert_eq!(p2["data"], long_with_escape);
+}

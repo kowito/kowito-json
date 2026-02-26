@@ -9,39 +9,39 @@ Currently optimized for Apple Silicon (M-series / ARM NEON) via Carry-Less Multi
 ## Features
 - **Zero-Decode Architecture:** Avoids full deserialization until you access a specific field.
 - **SIMD Optimized:** Uses architecture-specific intrinsics (like ARM NEON `PMULL`) to track structural tokens.
-- **Schema JIT Parsing:** With `kowito_json_derive`, bind JSON instantly into typed Rust structs at 6,600+ MiB/s.
-- **Ultra-Fast Schema-JIT Serialization:** Generate JSON from structs at 4,300+ MiB/s using compile-time templates.
+- **Schema JIT Parsing:** With `kowito_json_derive`, bind JSON instantly into typed Rust structs at 6.6 GiB/s.
+- **Ultra-Fast JIT Serialization:** Generate JSON from structs at 3.9 - 16 GiB/s using compile-time templates and NEON SIMD escaping.
 - **Hardware-Aware Memory Access:** Pre-fetches byte chunks into L1 cache for zero CPU stalling.
 
 ## Benchmarks
 
 Parsed on Apple Silicon M4 (NEON PMULL optimized). Measurements taken using `criterion` on a 10MB massive JSON payload.
 
-| Parser | Throughput (MiB/s) | Relative Speed (vs `serde_json`) |
+| Parser | Throughput (GiB/s) | Relative Speed (vs `serde_json`) |
 | :--- | :--- | :--- |
-| **kowito-json** | **~6,635 MiB/s** | **~27x Faster** |
-| `sonic-rs` | ~1,341 MiB/s | ~5.4x Faster |
-| `simd-json` | ~276 MiB/s | ~1.1x Faster |
-| `serde_json` | ~245 MiB/s | 1x (Baseline) |
+| **kowito-json** | **~6.48 GiB/s** | **~27x Faster** |
+| `sonic-rs` | ~1.31 GiB/s | ~5.4x Faster |
+| `simd-json` | ~0.26 GiB/s | ~1.1x Faster |
+| `serde_json` | ~0.24 GiB/s | 1x (Baseline) |
 
-### Parsing Performance (MiB/s)
+### Serialization Performance (GiB/s)
 
-```text
-serde_json  [■] 245
-simd-json   [■] 276
-sonic-rs    [■■■■■] 1341
-kowito-json [■■■■■■■■■■■■■■■■■■■■■■■■■■■] 6635
-```
+Measurements taken on Apple Silicon M4.
 
-### Serialization Performance (MiB/s)
+| Serializer | Tiny (3 fields) | Medium (7 fields) | Numeric (8 fields) |
+| :--- | :--- | :--- | :--- |
+| **kowito-json (JIT)** | **12.3 ns** | **37.5 ns** | **84.5 ns** |
+| `sonic-rs` | 21.3 ns | 64.9 ns | 105.2 ns |
+| `serde_json` | 33.7 ns | 83.6 ns | 117.4 ns |
 
-Measurements taken on small payloads (3-8 fields).
+### Mass-String Throughput (GiB/s)
+Best for large blobs, logs, or base64 data.
 
-| Serializer | Throughput (MiB/s) | Relative Speed (vs `serde_json`) |
-| :--- | :--- | :--- |
-| **kowito-json (JIT)** | **~4,350 MiB/s** | **~2.8x Faster** |
-| `sonic-rs` | ~1,750 MiB/s | ~1.1x Faster |
-| `serde_json` | ~1,520 MiB/s | 1x (Baseline) |
+| Serializer | 10KB String (NEON x4) |
+| :--- | :--- |
+| **kowito-json (JIT)** | **~22.76 GiB/s** |
+| `sonic-rs` | ~32.90 GiB/s |
+| `serde_json` | ~3.62 GiB/s |
 
 ## Installation
 
@@ -49,8 +49,8 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-kowito-json = "0.2.0"
-kowito-json-derive = "0.2.0"
+kowito-json = "0.2.2"
+kowito-json-derive = "0.2.1"
 ```
 
 ## Quick Start
@@ -64,31 +64,84 @@ use kowito_json_derive::Kjson;
 struct User {
     id: i64,
     name: String,
-    is_active: bool,
+    active: bool,
+    balance: f64,
 }
 
 fn main() {
-    let json_bytes = br#"{"id": 42, "name": "Kowito", "is_active": true}"#;
+    let json_bytes = br#"{"id": 42, "name": "Kowito", "active": true, "balance": 1234.56}"#;
     
-    // 1. Allocate a scratchpad for the tape (usually kept thread-local)
-    let mut scratchpad = Scratchpad::new(1024);
-    let tape = scratchpad.get_mut_tape();
-    
-    // 2. Scan and find all structural characters instantly with SIMD
-    let scanner = Scanner::new(json_bytes);
-    scanner.scan(tape);
-    
-    // 3. Create a zero-decode view
+    // 1. Scan and parse
+    let mut scratch = Scratchpad::new(1024);
+    let tape = scratch.get_mut_tape();
+    Scanner::new(json_bytes).scan(tape);
     let view = KView::new(json_bytes, tape);
-    
-    // 4. Instantly bind to a struct
-    let user = User::from_kview(&view).unwrap();
-    println!("Parsed User: {:?}", user);
+    let user = User::from_kview(&view); // Ultra-fast zero-decode
 
-    // 5. Serialize back to JSON at memory-bandwidth speeds
-    let mut out_buf = Vec::new();
+    // 2. Serialize at memory-bandwidth speeds
+    let mut out_buf = Vec::with_capacity(128);
     user.to_kbytes(&mut out_buf);
-    println!("Serialized: {}", String::from_utf8(out_buf).unwrap());
+    println!("Serialized: {}", String::from_utf8_lossy(&out_buf));
+}
+```
+
+## Advanced Examples
+
+### Nested Structs
+
+The `Kjson` derive macro automatically generates optimized templates for nested types.
+
+```rust
+#[derive(Kjson)]
+pub struct Address {
+    pub city: String,
+    pub zip: u32,
+}
+
+#[derive(Kjson)]
+pub struct Profile {
+    pub user_id: u64,
+    pub address: Address,
+    pub tags: Vec<String>, // Coming soon in Phase 4
+}
+```
+
+### Batch Serialization
+
+For scenarios like high-performance logging or API responses with many items, reuse the same buffer to minimize allocations.
+
+```rust
+let items = vec![user1, user2, user3];
+let mut buffer = Vec::with_capacity(1024 * 10);
+
+for item in items {
+    item.to_kbytes(&mut buffer);
+    buffer.push(b'\n'); // Newline delimited JSON (NDJSON)
+}
+```
+
+### Custom Serialization
+
+While `#[derive(Kjson)]` is recommended for maximum performance, you can manually implement the `Serialize` trait.
+
+```rust
+use kowito_json::serialize::{Serialize, write_str_escape, write_value};
+
+struct CustomLog {
+    level: String,
+    msg: String,
+}
+
+impl Serialize for CustomLog {
+    fn serialize(&self, buf: &mut Vec<u8>) {
+        buf.push(b'{');
+        buf.extend_from_slice(b"\"level\":");
+        write_str_escape(buf, self.level.as_bytes());
+        buf.push(b',');
+        buf.extend_from_slice(b"\"msg\":");
+        write_str_escape(buf, self.msg.as_bytes());
+        buf.push(b'}');
+    }
 }
 ```
 
@@ -100,7 +153,7 @@ Most parsers build an AST or evaluate string quotes using branching logic. `kowi
 `kowito-json` uses **Schema-JIT Serialization**. Instead of using generic reflection or slow `std::fmt` traits, the `Kjson` macro generates a specialized `to_kbytes` method at compile-time. This method:
 - Interleaves field keys and structural characters as static byte slices (`memcpy` from RO data).
 - Uses `itoa` and `ryu` for branchless numeric formatting.
-- Employs a specialized lookup-table for escape-fast-path string processing.
+- Employs **ARM NEON SIMD** processing to scan 16-byte blocks for escape characters in a single cycle.
 
 ## License
 
