@@ -1,6 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
 use core::arch::aarch64::*;
-use core::mem::transmute;
 
 // Positional bitmask used by both the bulk-reduction movemask and single-vector fallback.
 // Layout: [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128]
@@ -52,10 +51,10 @@ unsafe fn bulk_movemask_4x16(
     //   byte 2-3: c1's mask bytes,  byte 4-5: c2's,  byte 6-7: c3's
     //
     // fmov then extracts those 8 bytes as a u64 in one instruction.
-    let p01   = vpaddq_u8(t0, t1);
-    let p23   = vpaddq_u8(t2, t3);
+    let p01 = vpaddq_u8(t0, t1);
+    let p23 = vpaddq_u8(t2, t3);
     let p0123 = vpaddq_u8(p01, p23);
-    let r     = vpaddq_u8(p0123, p0123); // self-fold: low 8 bytes hold all 4 × 16-bit masks
+    let r = vpaddq_u8(p0123, p0123); // self-fold: low 8 bytes hold all 4 × 16-bit masks
 
     vgetq_lane_u64(vreinterpretq_u64_u8(r), 0)
 }
@@ -67,17 +66,22 @@ unsafe fn bulk_movemask_4x16(
 macro_rules! struct_or {
     ($v:expr) => {
         vorrq_u8(
-        vorrq_u8(
-        vorrq_u8(
-        vorrq_u8(
-        vorrq_u8(
-            vceqq_u8($v, vdupq_n_u8(b'{')),
-            vceqq_u8($v, vdupq_n_u8(b'}'))),
-            vceqq_u8($v, vdupq_n_u8(b'['))),
-            vceqq_u8($v, vdupq_n_u8(b']'))),
-            vceqq_u8($v, vdupq_n_u8(b':'))),
-            vceqq_u8($v, vdupq_n_u8(b',')))
-    }
+            vorrq_u8(
+                vorrq_u8(
+                    vorrq_u8(
+                        vorrq_u8(
+                            vceqq_u8($v, vdupq_n_u8(b'{')),
+                            vceqq_u8($v, vdupq_n_u8(b'}')),
+                        ),
+                        vceqq_u8($v, vdupq_n_u8(b'[')),
+                    ),
+                    vceqq_u8($v, vdupq_n_u8(b']')),
+                ),
+                vceqq_u8($v, vdupq_n_u8(b':')),
+            ),
+            vceqq_u8($v, vdupq_n_u8(b',')),
+        )
+    };
 }
 
 // ---------------------------------------------------------------------------
@@ -133,10 +137,8 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
         );
 
         // --- Full 64-bit PMULL string detection ---
-        // vmull_p64 computes carry-less prefix parity across all 64 bits.
-        // poly64_t is repr(transparent) over u64 — transmute is zero cost.
-        let cumulative: u64 =
-            transmute::<_, u128>(vmull_p64(transmute(q64), transmute(!0u64))) as u64;
+        // vmull_p64: poly64_t == u64, poly128_t == u128 — no casting needed.
+        let cumulative: u64 = vmull_p64(q64, !0u64) as u64;
         let string64 = cumulative ^ prev_in_string;
 
         // Propagate: fill all 64 bits with the sign bit (= "still in string?").
@@ -144,10 +146,10 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
 
         let string1 = string64 as u32;
         let string2 = (string64 >> 32) as u32;
-        let q1      = q64 as u32;
-        let q2      = (q64 >> 32) as u32;
-        let s1      = s64 as u32;
-        let s2      = (s64 >> 32) as u32;
+        let q1 = q64 as u32;
+        let q2 = (q64 >> 32) as u32;
+        let s1 = s64 as u32;
+        let s2 = (s64 >> 32) as u32;
 
         // active = (structurals outside strings) ∪ (all quote positions)
         let mut active1 = (s1 & !string1) | q1;
@@ -179,17 +181,12 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
         // Use same bulk routine but pass zero vectors for c2/c3 — they go to the
         // upper 32 bits which we throw away.
         let zero = vdupq_n_u8(0);
-        let q32 = bulk_movemask_4x16(
-            vceqq_u8(v0, q_splat),
-            vceqq_u8(v1, q_splat),
-            zero,
-            zero,
-        ) as u32; // lower 32 bits = mask for v0 and v1
+        let q32 =
+            bulk_movemask_4x16(vceqq_u8(v0, q_splat), vceqq_u8(v1, q_splat), zero, zero) as u32; // lower 32 bits = mask for v0 and v1
 
         let s32 = bulk_movemask_4x16(struct_or!(v0), struct_or!(v1), zero, zero) as u32;
 
-        let cumulative: u64 =
-            transmute::<_, u128>(vmull_p64(transmute(q32 as u64), transmute(!0u64))) as u64;
+        let cumulative: u64 = vmull_p64(q32 as u64, !0u64) as u64;
         let string32 = (cumulative ^ prev_in_string) as u32;
         prev_in_string = ((string32 as i32) >> 31) as u64;
 
@@ -227,4 +224,3 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
 pub unsafe fn scan_neon(_bytes: &[u8], _tape: &mut [u32]) -> usize {
     unreachable!("scan_neon called on non-aarch64 architecture")
 }
-
