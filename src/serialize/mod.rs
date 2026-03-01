@@ -65,7 +65,10 @@ unsafe fn neon_movemask_u8x16(v: uint8x16_t) -> u16 {
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
 unsafe fn bulk_movemask_4x16(
-    c0: uint8x16_t, c1: uint8x16_t, c2: uint8x16_t, c3: uint8x16_t,
+    c0: uint8x16_t,
+    c1: uint8x16_t,
+    c2: uint8x16_t,
+    c3: uint8x16_t,
 ) -> u64 {
     let bm = vld1q_u8(BITMASK.as_ptr());
     let t0 = vandq_u8(c0, bm);
@@ -90,10 +93,22 @@ unsafe fn escape_mask_neon_x64(ptr: *const u8) -> u64 {
     let quote = vdupq_n_u8(b'"');
     let bslash = vdupq_n_u8(b'\\');
     let ctrl = vdupq_n_u8(0x20);
-    let m0 = vorrq_u8(vorrq_u8(vceqq_u8(v0, quote), vceqq_u8(v0, bslash)), vcltq_u8(v0, ctrl));
-    let m1 = vorrq_u8(vorrq_u8(vceqq_u8(v1, quote), vceqq_u8(v1, bslash)), vcltq_u8(v1, ctrl));
-    let m2 = vorrq_u8(vorrq_u8(vceqq_u8(v2, quote), vceqq_u8(v2, bslash)), vcltq_u8(v2, ctrl));
-    let m3 = vorrq_u8(vorrq_u8(vceqq_u8(v3, quote), vceqq_u8(v3, bslash)), vcltq_u8(v3, ctrl));
+    let m0 = vorrq_u8(
+        vorrq_u8(vceqq_u8(v0, quote), vceqq_u8(v0, bslash)),
+        vcltq_u8(v0, ctrl),
+    );
+    let m1 = vorrq_u8(
+        vorrq_u8(vceqq_u8(v1, quote), vceqq_u8(v1, bslash)),
+        vcltq_u8(v1, ctrl),
+    );
+    let m2 = vorrq_u8(
+        vorrq_u8(vceqq_u8(v2, quote), vceqq_u8(v2, bslash)),
+        vcltq_u8(v2, ctrl),
+    );
+    let m3 = vorrq_u8(
+        vorrq_u8(vceqq_u8(v3, quote), vceqq_u8(v3, bslash)),
+        vcltq_u8(v3, ctrl),
+    );
     bulk_movemask_4x16(m0, m1, m2, m3)
 }
 
@@ -106,8 +121,14 @@ unsafe fn escape_mask_neon_x32(ptr: *const u8) -> u32 {
     let quote = vdupq_n_u8(b'"');
     let bslash = vdupq_n_u8(b'\\');
     let ctrl = vdupq_n_u8(0x20);
-    let m0 = vorrq_u8(vorrq_u8(vceqq_u8(v0, quote), vceqq_u8(v0, bslash)), vcltq_u8(v0, ctrl));
-    let m1 = vorrq_u8(vorrq_u8(vceqq_u8(v1, quote), vceqq_u8(v1, bslash)), vcltq_u8(v1, ctrl));
+    let m0 = vorrq_u8(
+        vorrq_u8(vceqq_u8(v0, quote), vceqq_u8(v0, bslash)),
+        vcltq_u8(v0, ctrl),
+    );
+    let m1 = vorrq_u8(
+        vorrq_u8(vceqq_u8(v1, quote), vceqq_u8(v1, bslash)),
+        vcltq_u8(v1, ctrl),
+    );
     (neon_movemask_u8x16(m0) as u32) | ((neon_movemask_u8x16(m1) as u32) << 16)
 }
 
@@ -140,8 +161,7 @@ unsafe fn escape_mask_avx2_x2(ptr: *const u8) -> u64 {
         _mm256_cmpeq_epi8(d1, q),
         _mm256_or_si256(_mm256_cmpeq_epi8(d1, b), _mm256_cmpgt_epi8(c, d1)),
     );
-    (_mm256_movemask_epi8(m0) as u32 as u64)
-        | ((_mm256_movemask_epi8(m1) as u32 as u64) << 32)
+    (_mm256_movemask_epi8(m0) as u32 as u64) | ((_mm256_movemask_epi8(m1) as u32 as u64) << 32)
 }
 
 /// 32-byte escape mask (single AVX2 register).
@@ -255,19 +275,28 @@ pub fn write_str_escape(buf: &mut Vec<u8>, bytes: &[u8]) {
     {
         while i + 64 <= len {
             let mask = unsafe { escape_mask_neon_x64(bytes.as_ptr().add(i)) };
-            if mask == 0 { i += 64; continue; }
+            if mask == 0 {
+                i += 64;
+                continue;
+            }
             drain_escape_vec!(buf, bytes, start, i, mask);
             i += 64;
         }
         while i + 32 <= len {
             let mask = unsafe { escape_mask_neon_x32(bytes.as_ptr().add(i)) } as u64;
-            if mask == 0 { i += 32; continue; }
+            if mask == 0 {
+                i += 32;
+                continue;
+            }
             drain_escape_vec!(buf, bytes, start, i, mask);
             i += 32;
         }
         while i + 16 <= len {
             let mask = unsafe { escape_mask_neon_x16(bytes.as_ptr().add(i)) } as u64;
-            if mask == 0 { i += 16; continue; }
+            if mask == 0 {
+                i += 16;
+                continue;
+            }
             drain_escape_vec!(buf, bytes, start, i, mask);
             i += 16;
         }
@@ -278,13 +307,19 @@ pub fn write_str_escape(buf: &mut Vec<u8>, bytes: &[u8]) {
         if is_x86_feature_detected!("avx2") {
             while i + 64 <= len {
                 let mask = unsafe { escape_mask_avx2_x2(bytes.as_ptr().add(i)) };
-                if mask == 0 { i += 64; continue; }
+                if mask == 0 {
+                    i += 64;
+                    continue;
+                }
                 drain_escape_vec!(buf, bytes, start, i, mask);
                 i += 64;
             }
             while i + 32 <= len {
                 let mask = unsafe { escape_mask_avx2(bytes.as_ptr().add(i)) } as u64;
-                if mask == 0 { i += 32; continue; }
+                if mask == 0 {
+                    i += 32;
+                    continue;
+                }
                 drain_escape_vec!(buf, bytes, start, i, mask);
                 i += 32;
             }
@@ -339,19 +374,28 @@ pub unsafe fn write_str_escape_raw(mut curr: *mut u8, bytes: &[u8]) -> *mut u8 {
     {
         while i + 64 <= len {
             let mask = escape_mask_neon_x64(bytes.as_ptr().add(i));
-            if mask == 0 { i += 64; continue; }
+            if mask == 0 {
+                i += 64;
+                continue;
+            }
             drain_escape_raw!(curr, bytes, start, i, mask);
             i += 64;
         }
         while i + 32 <= len {
             let mask = escape_mask_neon_x32(bytes.as_ptr().add(i)) as u64;
-            if mask == 0 { i += 32; continue; }
+            if mask == 0 {
+                i += 32;
+                continue;
+            }
             drain_escape_raw!(curr, bytes, start, i, mask);
             i += 32;
         }
         while i + 16 <= len {
             let mask = escape_mask_neon_x16(bytes.as_ptr().add(i)) as u64;
-            if mask == 0 { i += 16; continue; }
+            if mask == 0 {
+                i += 16;
+                continue;
+            }
             drain_escape_raw!(curr, bytes, start, i, mask);
             i += 16;
         }
@@ -362,13 +406,19 @@ pub unsafe fn write_str_escape_raw(mut curr: *mut u8, bytes: &[u8]) -> *mut u8 {
         if is_x86_feature_detected!("avx2") {
             while i + 64 <= len {
                 let mask = escape_mask_avx2_x2(bytes.as_ptr().add(i));
-                if mask == 0 { i += 64; continue; }
+                if mask == 0 {
+                    i += 64;
+                    continue;
+                }
                 drain_escape_raw!(curr, bytes, start, i, mask);
                 i += 64;
             }
             while i + 32 <= len {
                 let mask = escape_mask_avx2(bytes.as_ptr().add(i)) as u64;
-                if mask == 0 { i += 32; continue; }
+                if mask == 0 {
+                    i += 32;
+                    continue;
+                }
                 drain_escape_raw!(curr, bytes, start, i, mask);
                 i += 32;
             }

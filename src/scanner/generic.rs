@@ -30,7 +30,16 @@ unsafe fn compute_masks_avx2(bytes: &[u8], offset: usize) -> [u32; 8] {
     let eq = |b: u8| -> u32 {
         _mm256_movemask_epi8(_mm256_cmpeq_epi8(chunk, _mm256_set1_epi8(b as i8))) as u32
     };
-    [eq(b'"'), eq(b'\\'), eq(b'{'), eq(b'}'), eq(b'['), eq(b']'), eq(b':'), eq(b',')]
+    [
+        eq(b'"'),
+        eq(b'\\'),
+        eq(b'{'),
+        eq(b'}'),
+        eq(b'['),
+        eq(b']'),
+        eq(b':'),
+        eq(b','),
+    ]
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -45,7 +54,16 @@ unsafe fn compute_masks_neon(bytes: &[u8], offset: usize) -> [u32; 8] {
         let hi_mask = (neon_movemask_u8x16(vceqq_u8(hi, t)) as u32) << 16;
         lo_mask | hi_mask
     };
-    [eq32(b'"'), eq32(b'\\'), eq32(b'{'), eq32(b'}'), eq32(b'['), eq32(b']'), eq32(b':'), eq32(b',')]
+    [
+        eq32(b'"'),
+        eq32(b'\\'),
+        eq32(b'{'),
+        eq32(b'}'),
+        eq32(b'['),
+        eq32(b']'),
+        eq32(b':'),
+        eq32(b','),
+    ]
 }
 
 /// NEON horizontal movemask: extracts the MSB of each byte into a `u16`.
@@ -59,9 +77,9 @@ unsafe fn neon_movemask_u8x16(v: core::arch::aarch64::uint8x16_t) -> u16 {
     // Multiply by positional weight (1, 2, 4, 8 … 128) then sum both halves.
     const POSITIONAL: [u8; 16] = [1, 2, 4, 8, 16, 32, 64, 128, 1, 2, 4, 8, 16, 32, 64, 128];
     let pos = vld1q_u8(POSITIONAL.as_ptr());
-    let bits = vshrq_n_u8(v, 7);        // 0x01 or 0x00 per lane
+    let bits = vshrq_n_u8(v, 7); // 0x01 or 0x00 per lane
     let weighted = vmulq_u8(bits, pos); // lane i carries its bit-weight or 0
-    let lo = vaddv_u8(vget_low_u8(weighted)) as u16;   // bits 0-7
+    let lo = vaddv_u8(vget_low_u8(weighted)) as u16; // bits 0-7
     let hi = (vaddv_u8(vget_high_u8(weighted)) as u16) << 8; // bits 8-15
     lo | hi
 }
@@ -70,14 +88,14 @@ fn compute_masks_scalar(bytes: &[u8], offset: usize) -> [u32; 8] {
     let mut masks = [0u32; 8];
     for j in 0..32usize {
         match bytes[offset + j] {
-            b'"'  => masks[0] |= 1 << j,
+            b'"' => masks[0] |= 1 << j,
             b'\\' => masks[1] |= 1 << j,
-            b'{'  => masks[2] |= 1 << j,
-            b'}'  => masks[3] |= 1 << j,
-            b'['  => masks[4] |= 1 << j,
-            b']'  => masks[5] |= 1 << j,
-            b':'  => masks[6] |= 1 << j,
-            b','  => masks[7] |= 1 << j,
+            b'{' => masks[2] |= 1 << j,
+            b'}' => masks[3] |= 1 << j,
+            b'[' => masks[4] |= 1 << j,
+            b']' => masks[5] |= 1 << j,
+            b':' => masks[6] |= 1 << j,
+            b',' => masks[7] |= 1 << j,
             _ => {}
         }
     }
@@ -113,7 +131,7 @@ impl<'a> Scanner<'a> {
             #[cfg(target_arch = "x86_64")]
             if i + 128 < bytes.len() {
                 unsafe {
-                    use core::arch::x86_64::{_mm_prefetch, _MM_HINT_T2};
+                    use core::arch::x86_64::{_MM_HINT_T2, _mm_prefetch};
                     _mm_prefetch(bytes.as_ptr().add(i + 128) as *const i8, _MM_HINT_T2);
                 }
             }
