@@ -1,7 +1,3 @@
-#![feature(portable_simd)]
-#![allow(internal_features)]
-#![feature(core_intrinsics)]
-
 extern crate self as kowito_json;
 
 pub mod arena;

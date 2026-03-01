@@ -1,21 +1,21 @@
 # Kowito-JSON Benchmark Report
 
-**Date:** February 26, 2026  
-**Version:** 0.2.5  
+**Date:** March 1, 2026  
+**Version:** 0.2.8  
 **Compiler:** Rust (2026-01-18)
 
 ---
 
 ## 📊 Executive Summary
 
-Kowito-JSON demonstrates **superior performance** across all micro and hot-loop benchmarks, with **2.3x-3.8x speedup** over competing JSON serializers on typical payloads.
+Kowito-JSON demonstrates **superior performance** across all micro and hot-loop benchmarks, with **2.1x-3.1x speedup** over competing JSON serializers on typical payloads.
 
 | Category | Winner | Speedup vs serde_json | Speedup vs sonic_rs |
 |----------|--------|----------------------|---------------------|
-| Tiny Payloads (3 fields) | **Kowito** | **3.3x** | **2.2x** |
-| Medium Payloads (7 fields) | **Kowito** | **2.3x** | **1.9x** |
+| Tiny Payloads (3 fields) | **Kowito** | **3.1x** | **1.9x** |
+| Medium Payloads (7 fields) | **Kowito** | **2.1x** | **1.7x** |
 | Numeric Payloads (8 fields) | **Kowito** | **1.4x** | **1.2x** |
-| Hot Loop (1000 items) | **Kowito** | **2.2x** | **1.8x** |
+| Hot Loop (1000 items) | **Kowito** | **2.1x** | **1.6x** |
 
 ---
 
@@ -24,20 +24,20 @@ Kowito-JSON demonstrates **superior performance** across all micro and hot-loop 
 **Throughput Comparison (Higher is Better)**
 
 ```
-serde_json      ████ 1.56 GiB/s
-sonic_rs        ███████ 2.37 GiB/s
-kowito_json_jit ██████████████ 5.16 GiB/s
+serde_json      ████ 1.48 GiB/s
+sonic_rs        ███████ 2.34 GiB/s
+kowito_json_jit ██████████████ 4.54 GiB/s
 ```
 
 **Latency (Nanoseconds - Lower is Better)**
 
 ```
-serde_json      ███████████████ 32.5 ns
-sonic_rs        ██████████ 21.5 ns
-kowito_json_jit █████ 9.88 ns ⭐ FASTEST
+serde_json      ████████████████ 34.3 ns
+sonic_rs        ██████████ 21.7 ns
+kowito_json_jit █████ 11.2 ns ⭐ FASTEST
 ```
 
-**Performance Gain:** ✅ Kowito is **3.3x faster** than serde_json, **2.2x faster** than sonic_rs
+**Performance Gain:** ✅ Kowito is **3.1x faster** than serde_json, **1.9x faster** than sonic_rs
 
 ---
 
@@ -46,20 +46,20 @@ kowito_json_jit █████ 9.88 ns ⭐ FASTEST
 **Throughput Comparison (Higher is Better)**
 
 ```
-serde_json      ████ 1.43 GiB/s
-sonic_rs        ███████ 1.79 GiB/s
-kowito_json_jit ████████████ 3.38 GiB/s
+serde_json      ████ 1.36 GiB/s
+sonic_rs        ███████ 1.76 GiB/s
+kowito_json_jit ████████████ 3.07 GiB/s
 ```
 
 **Latency (Nanoseconds - Lower is Better)**
 
 ```
-serde_json      ████████████████████ 79.3 ns
-sonic_rs        ████████████████ 63.2 ns
-kowito_json_jit ░░░░░░░░ 33.8 ns ⭐ FASTEST
+serde_json      █████████████████████ 81.1 ns
+sonic_rs        █████████████████ 66.1 ns
+kowito_json_jit ░░░░░░░░ 37.9 ns ⭐ FASTEST
 ```
 
-**Performance Gain:** ✅ Kowito is **2.3x faster** than serde_json, **1.9x faster** than sonic_rs
+**Performance Gain:** ✅ Kowito is **2.1x faster** than serde_json, **1.7x faster** than sonic_rs
 
 ---
 
@@ -68,17 +68,17 @@ kowito_json_jit ░░░░░░░░ 33.8 ns ⭐ FASTEST
 **Throughput Comparison (Higher is Better)**
 
 ```
-serde_json      ████ 1.25 GiB/s
-sonic_rs        █████ 1.44 GiB/s
-kowito_json_jit ███████████ 1.79 GiB/s
+serde_json      ████ 1.22 GiB/s
+sonic_rs        █████ 1.45 GiB/s
+kowito_json_jit ███████████ 1.76 GiB/s
 ```
 
 **Latency (Nanoseconds - Lower is Better)**
 
 ```
-serde_json      █████████████████ 114.4 ns
-sonic_rs        ███████████████ 99.0 ns
-kowito_json_jit ███████████ 79.8 ns ⭐ FASTEST
+serde_json      ██████████████████ 118.9 ns
+sonic_rs        ████████████████ 100.0 ns
+kowito_json_jit ████████████ 82.4 ns ⭐ FASTEST
 ```
 
 **Performance Gain:** ✅ Kowito is **1.4x faster** than serde_json, **1.2x faster** than sonic_rs
@@ -90,20 +90,20 @@ kowito_json_jit ███████████ 79.8 ns ⭐ FASTEST
 **Throughput Comparison (Higher is Better)**
 
 ```
-serde_json      ████ 1.25 GiB/s
-sonic_rs        ██████ 1.55 GiB/s
-kowito_json_jit ██████████ 2.75 GiB/s
+serde_json      ████████████████ 1.19 GiB/s
+sonic_rs        ████████████████████ 1.51 GiB/s
+kowito_json_jit ████████████████████████████████ 2.46 GiB/s
 ```
 
 **Latency (Microseconds - Lower is Better)**
 
 ```
-serde_json      ████████████████████ 87.1 µs
-sonic_rs        █████████████ 70.1 µs
-kowito_json_jit ███████ 39.6 µs ⭐ FASTEST
+serde_json      ████████████████████ 91.3 µs
+sonic_rs        ████████████████ 72.3 µs
+kowito_json_jit ████████████ 44.4 µs ⭐ FASTEST
 ```
 
-**Performance Gain:** ✅ Kowito is **2.2x faster** than serde_json, **1.8x faster** than sonic_rs
+**Performance Gain:** ✅ Kowito is **2.1x faster** than serde_json, **1.6x faster** than sonic_rs
 
 ---
 
@@ -112,33 +112,33 @@ kowito_json_jit ███████ 39.6 µs ⭐ FASTEST
 **Throughput Comparison (Higher is Better)**
 
 ```
-serde_json      ████ 3.66 GiB/s
-sonic_rs        ████████████████████████████████ 33.2 GiB/s ⭐ FASTEST
-kowito_json_jit ███████████████████████ 25.0 GiB/s
+serde_json      ████ 3.52 GiB/s
+sonic_rs        ████████████████████████████████ 32.3 GiB/s ⭐ FASTEST
+kowito_json_jit ███████████████████████ 24.3 GiB/s
 ```
 
 **Latency (Nanoseconds - Lower is Better)**
 
 ```
-serde_json      █████████████████████ 2542 ns
-sonic_rs        ▌ 281 ns ⭐ FASTEST
-kowito_json_jit  ░░░░░░░░░░░░░░░░░░░░░░░░ 370 ns
+serde_json      █████████████████████ 2649 ns
+sonic_rs        ▌ 288.8 ns ⭐ FASTEST
+kowito_json_jit  ░░░░░░░░░░░░░░░░░░░░░░░░ 383.6 ns
 ```
 
-**Analysis:** For large strings, sonic_rs' specialized SIMD escape handling is optimal. Kowito remains competitive at **25 GiB/s**.
+**Analysis:** For large strings, sonic_rs' specialized SIMD escape handling is optimal. Kowito remains competitive at **24.3 GiB/s**.
 
 ---
 
 ## 📈 Performance Categories
 
 ### 🚀 Kowito Dominates
-- **Tiny payloads** (< 50 bytes): 3.3x speedup
-- **Medium payloads** (50-200 bytes): 2.3x speedup  
-- **Repeated serialization** (1000+ items): 2.2x speedup
+- **Tiny payloads** (< 50 bytes): 3.1x speedup
+- **Medium payloads** (50-200 bytes): 2.1x speedup  
+- **Repeated serialization** (1000+ items): 2.1x speedup
 
 ### ⚡ Highly Competitive
 - **Numeric-heavy data**: 1.4x speedup
-- **Large SIMD strings**: 25 GiB/s (competitive with sonic_rs)
+- **Large SIMD strings**: 24.3 GiB/s (competitive with sonic_rs)
 
 ---
 
@@ -183,11 +183,11 @@ SIMD:        NEON (always available on ARM64)
 
 | Benchmark | serde_json | sonic_rs | kowito_json_jit | Winner | Gain |
 |-----------|-----------|----------|-----------------|--------|------|
-| tiny_3 (ns) | 32.5 | 21.5 | **9.88** | Kowito | 3.3x |
-| medium_7 (ns) | 79.3 | 63.2 | **33.8** | Kowito | 2.3x |
-| numeric_8 (ns) | 114 | 99.0 | **79.8** | Kowito | 1.4x |
-| hot-loop (µs) | 87.1 | 70.1 | **39.6** | Kowito | 2.2x |
-| large-string (ns) | 2542 | **281** | 370 | sonic_rs | - |
+| tiny_3 (ns) | 34.3 | 21.7 | **11.2** | Kowito | 3.1x |
+| medium_7 (ns) | 81.1 | 66.1 | **37.9** | Kowito | 2.1x |
+| numeric_8 (ns) | 118.9 | 100.0 | **82.4** | Kowito | 1.4x |
+| hot-loop (µs) | 91.3 | 72.3 | **44.4** | Kowito | 2.1x |
+| large-string (ns) | 2649 | **288.8** | 383.6 | sonic_rs | - |
 
 ---
 

@@ -24,18 +24,18 @@ Measured on **Apple Silicon M4**, release profile, using `criterion` (100 sample
 **Visual Chart (Higher = Faster)**
 
 ```
-kowito-json ████████████████████████████ 6.48 GiB/s ⭐ FASTEST
-sonic_rs    ████ 1.31 GiB/s
-simd_json   ░ 0.26 GiB/s
-serde_json  ░ 0.24 GiB/s (baseline)
+kowito-json ████████████████████████████ 6.45 GiB/s ⭐ FASTEST
+sonic_rs    █████ 1.28 GiB/s
+simd_json   █ 0.27 GiB/s
+serde_json  █ 0.23 GiB/s (baseline)
 ```
 
 | Parser | Throughput | vs `serde_json` |
 |:---|:---|:---|
-| **kowito-json** | **~6.48 GiB/s** | **27× faster** |
-| `sonic-rs` | ~1.31 GiB/s | 5.4× faster |
-| `simd-json` | ~0.26 GiB/s | 1.1× faster |
-| `serde_json` | ~0.24 GiB/s | baseline |
+| **kowito-json** | **~6.45 GiB/s** | **28× faster** |
+| `sonic-rs` | ~1.28 GiB/s | 5.6× faster |
+| `simd-json` | ~0.27 GiB/s | 1.2× faster |
+| `serde_json` | ~0.23 GiB/s | baseline |
 
 ---
 
@@ -43,30 +43,30 @@ serde_json  ░ 0.24 GiB/s (baseline)
 
 **Tiny (3 fields)**
 ```
-serde_json  ████████████████████████ 32.5 ns
-sonic_rs    ████████████████ 21.5 ns
-kowito-json ███ 9.88 ns ⭐ FASTEST (3.3× faster)
+serde_json  ████████████████████████████ 34.3 ns
+sonic_rs    ██████████████████ 21.7 ns
+kowito-json █████████ 11.2 ns ⭐ FASTEST (3.1× faster)
 ```
 
 **Medium (7 fields)**
 ```
-serde_json  ████████████████████ 79.3 ns
-sonic_rs    ████████████ 63.2 ns
-kowito-json ███████ 33.8 ns ⭐ FASTEST (2.3× faster)
+serde_json  ████████████████████████████ 81.1 ns
+sonic_rs    ██████████████████████ 66.1 ns
+kowito-json █████████████ 37.9 ns ⭐ FASTEST (2.1× faster)
 ```
 
 **Numeric (8 fields)**
 ```
-serde_json  ███████████████ 114.4 ns
-sonic_rs    ████████████ 99.0 ns
-kowito-json ██████████ 79.8 ns ⭐ FASTEST (1.4× faster)
+serde_json  ████████████████████████████ 118.9 ns
+sonic_rs    ████████████████████████ 100.0 ns
+kowito-json ███████████████████ 82.4 ns ⭐ FASTEST (1.4× faster)
 ```
 
 | Payload | `serde_json` | `sonic_rs` | **kowito-json** | Gain |
 |:---|:---|:---|:---|:---|
-| Tiny — 3 fields | 32.5 ns | 21.5 ns | **9.88 ns** | **3.3×** |
-| Medium — 7 fields | 79.3 ns | 63.2 ns | **33.8 ns** | **2.3×** |
-| Numeric — 8 fields | 114.4 ns | 99.0 ns | **79.8 ns** | **1.4×** |
+| Tiny — 3 fields | 34.3 ns | 21.7 ns | **11.2 ns** | **3.1×** |
+| Medium — 7 fields | 81.1 ns | 66.1 ns | **37.9 ns** | **2.1×** |
+| Numeric — 8 fields | 118.9 ns | 100.0 ns | **82.4 ns** | **1.4×** |
 
 ---
 
@@ -74,23 +74,23 @@ kowito-json ██████████ 79.8 ns ⭐ FASTEST (1.4× faster)
 
 **Latency per Batch**
 ```
-serde_json  ███████████████████████████████ 87.1 µs
-sonic_rs    █████████████████ 70.1 µs
-kowito-json ████████ 39.6 µs ⭐ FASTEST (2.2× faster)
+serde_json  ████████████████████████████ 91.3 µs
+sonic_rs    ██████████████████████ 72.3 µs
+kowito-json █████████████ 44.4 µs ⭐ FASTEST (2.1× faster)
 ```
 
 **Throughput**
 ```
-serde_json  ███ 1.25 GiB/s
-sonic_rs    ████ 1.55 GiB/s
-kowito-json ███████ 2.75 GiB/s ⭐ FASTEST
+kowito-json ████████████████████████████ 2.46 GiB/s ⭐ FASTEST
+sonic_rs    █████████████████ 1.51 GiB/s
+serde_json  █████████████ 1.19 GiB/s
 ```
 
 | Serializer | Latency | Throughput |
 |:---|:---|:---|
-| **kowito-json** | **39.6 µs** | **2.75 GiB/s** |
-| `sonic_rs` | 70.1 µs | 1.55 GiB/s |
-| `serde_json` | 87.1 µs | 1.25 GiB/s |
+| **kowito-json** | **44.4 µs** | **2.46 GiB/s** |
+| `sonic_rs` | 72.3 µs | 1.51 GiB/s |
+| `serde_json` | 91.3 µs | 1.19 GiB/s |
 
 ---
 
@@ -98,23 +98,23 @@ kowito-json ███████ 2.75 GiB/s ⭐ FASTEST
 
 **Latency (Lower = Better)**
 ```
-sonic_rs    █ 281 ns ⭐ FASTEST
-kowito-json ██ 370 ns (competitive)
-serde_json  ████████████████ 2542 ns (9× slower)
+sonic_rs    ███ 288.8 ns ⭐ FASTEST
+kowito-json ████ 383.6 ns (competitive)
+serde_json  ████████████████████████████ 2649 ns (6.9× slower)
 ```
 
 **Throughput (Higher = Better)**
 ```
-sonic_rs    ████████████████████████████ 33.2 GiB/s ⭐ FASTEST
-kowito-json ████████████████████ 25.0 GiB/s
-serde_json  ████ 3.66 GiB/s
+sonic_rs    ████████████████████████████ 32.3 GiB/s ⭐ FASTEST
+kowito-json █████████████████████ 24.3 GiB/s
+serde_json  ███ 3.52 GiB/s
 ```
 
 | Serializer | Latency | Throughput |
 |:---|:---|:---|
-| `sonic_rs` | **281 ns** | **33.2 GiB/s** |
-| **kowito-json** | 370 ns | 25.0 GiB/s |
-| `serde_json` | 2542 ns | 3.66 GiB/s |
+| `sonic_rs` | **288.8 ns** | **32.3 GiB/s** |
+| **kowito-json** | 383.6 ns | 24.3 GiB/s |
+| `serde_json` | 2649 ns | 3.52 GiB/s |
 
 ---
 
@@ -122,10 +122,10 @@ serde_json  ████ 3.66 GiB/s
 
 | Use Case | Best Choice | Why |
 |:---|:---|:---|
-| **Micro payloads** (< 100 bytes) | **kowito-json** ⭐ | 3.3× speedup, zero-copy design |
-| **Hot-loop batch** (1000+ items) | **kowito-json** ⭐ | 2.2× faster, schema-JIT wins |
-| **Large strings** (10KB+) | `sonic_rs` | Specialized escape SIMD, 33 GiB/s |
-| **General parsing** (all sizes) | **kowito-json** ⭐ | 27× faster than serde_json |
+| **Micro payloads** (< 100 bytes) | **kowito-json** ⭐ | 3.1× speedup, zero-copy design |
+| **Hot-loop batch** (1000+ items) | **kowito-json** ⭐ | 2.1× faster, schema-JIT wins |
+| **Large strings** (10KB+) | `sonic_rs` | Specialized escape SIMD, 32 GiB/s |
+| **General parsing** (all sizes) | **kowito-json** ⭐ | 28× faster than serde_json |
 | **Compatibility** (stable Rust) | `serde_json` | Mature, works on stable |
 
 > **kowito-json dominates micro and hot-loop workloads.** sonic_rs edges ahead only on pure large-string throughput. Choose **kowito-json** for microservices, logging pipelines, and real-time systems.
@@ -149,8 +149,8 @@ serde_json  ████ 3.66 GiB/s
 
 ```toml
 [dependencies]
-kowito-json        = "0.2.5"
-kowito-json-derive = "0.2.3"
+kowito-json        = "0.2.8"
+kowito-json-derive = "0.2.6"
 ```
 
 Requires **Rust nightly** (uses `portable_simd`):
