@@ -203,17 +203,37 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
 
     // -----------------------------------------------------------------------
     // Scalar tail for the final < 32 bytes.
+    //
+    // We inline the scan rather than delegating to generic::Scanner so that
+    // the in-string carry from the SIMD loop above is preserved correctly.
     // -----------------------------------------------------------------------
-    if i < bytes.len() {
-        let generic_tail = crate::scanner::generic::Scanner::new(&bytes[i..]);
-        let tape_remaining = tape.len().saturating_sub(tape_idx);
-        let mut temp = vec![0u32; tape_remaining];
-        let n = generic_tail.scan(&mut temp);
-        for &off in temp[..n].iter() {
-            if tape_idx < tape.len() {
-                tape[tape_idx] = i as u32 + off;
-                tape_idx += 1;
+    {
+        let mut in_string = prev_in_string != 0;
+        let mut escape = false;
+        while i < bytes.len() {
+            let b = *bytes.get_unchecked(i);
+            if escape {
+                escape = false;
+            } else if b == b'\\' && in_string {
+                escape = true;
+            } else if b == b'"' {
+                if tape_idx < tape.len() {
+                    *tape.get_unchecked_mut(tape_idx) = i as u32;
+                    tape_idx += 1;
+                }
+                in_string = !in_string;
+            } else if !in_string {
+                match b {
+                    b'{' | b'}' | b'[' | b']' | b':' | b',' => {
+                        if tape_idx < tape.len() {
+                            *tape.get_unchecked_mut(tape_idx) = i as u32;
+                            tape_idx += 1;
+                        }
+                    }
+                    _ => {}
+                }
             }
+            i += 1;
         }
     }
 

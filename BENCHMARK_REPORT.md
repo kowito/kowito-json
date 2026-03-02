@@ -1,14 +1,14 @@
 # Kowito-JSON Benchmark Report
 
-**Date:** March 1, 2026  
-**Version:** 0.2.8  
+**Date:** March 2, 2026  
+**Version:** 0.2.10  
 **Compiler:** Rust (2026-01-18)
 
 ---
 
 ## 📊 Executive Summary
 
-Kowito-JSON demonstrates **superior performance** across all micro and hot-loop benchmarks, with **2.1x-3.1x speedup** over competing JSON serializers on typical payloads.
+Kowito-JSON demonstrates **superior performance** across serialization and parsing benchmarks. The NEON scanner reaches **6.8 GiB/s** on a 12 MB real-world JSON corpus — **5.3× faster** than sonic_rs and **29×** faster than serde_json at full parse throughput.
 
 | Category | Winner | Speedup vs serde_json | Speedup vs sonic_rs |
 |----------|--------|----------------------|---------------------|
@@ -16,6 +16,8 @@ Kowito-JSON demonstrates **superior performance** across all micro and hot-loop 
 | Medium Payloads (7 fields) | **Kowito** | **2.1x** | **1.7x** |
 | Numeric Payloads (8 fields) | **Kowito** | **1.4x** | **1.2x** |
 | Hot Loop (1000 items) | **Kowito** | **2.1x** | **1.6x** |
+| Massive Parser – scanner only | **Kowito** | **29x** | **5.3x** |
+| Massive Parser – schema JIT | **Kowito** | **29x** | **5.4x** |
 
 ---
 
@@ -129,6 +131,47 @@ kowito_json_jit  ░░░░░░░░░░░░░░░░░░░░░
 
 ---
 
+## 6️⃣ Massive JSON Parser – 12 MB Real-World Corpus (NEON baseline, aarch64)
+
+> **Input:** 100,000 user-object JSON array, ~12.3 MiB  
+> **Path:** NEON (ARM) — AVX2+PCLMULQDQ path requires x86_64 hardware  
+> **Versions measured against:** serde_json 1.0, simd-json 0.17, sonic-rs 0.5
+
+**Scanner Throughput (Higher is Better)**
+
+```
+serde_json              ▌ 234 MiB/s
+simd_json               ▌ 265 MiB/s
+sonic_rs                ████████ 1.29 GiB/s
+kowito_scanner_only     ██████████████████████████████████████████ 6.84 GiB/s ⭐
+kowito_schema_jit       ██████████████████████████████████████████ 6.93 GiB/s ⭐
+```
+
+**Latency (per 12 MB parse, Lower is Better)**
+
+```
+serde_json              ████████████████████████████████ 56.4 ms
+simd_json               ████████████████████████████ 49.9 ms
+sonic_rs                ██████ 10.1 ms
+kowito_scanner_only     ▌ 1.89 ms ⭐ FASTEST
+kowito_schema_jit       ▌ 1.87 ms ⭐ FASTEST
+```
+
+| Library | Time (ms) | Throughput | vs serde_json | vs sonic_rs |
+|---|---|---|---|---|
+| serde_json | 56.4 | 234 MiB/s | — | — |
+| simd_json | 49.9 | 265 MiB/s | 1.1× | — |
+| sonic_rs | 10.1 | 1.29 GiB/s | 5.6× | — |
+| **kowito_scanner_only** | **1.89** | **6.84 GiB/s** | **29×** | **5.3×** |
+| **kowito_schema_jit** | **1.87** | **6.93 GiB/s** | **29×** | **5.4×** |
+
+**Performance Gain:** ✅ Kowito scanner is **29× faster** than serde_json,  
+**5.3× faster** than sonic_rs (which uses its own SIMD parse path).
+
+> **Note (x86_64):** The `scan_avx2` path (AVX2 + PCLMULQDQ, 64-byte blocks, implemented in v0.2.10) is not measured here. Expected throughput on x86_64 is **1.5–2.5× higher** than the generic scalar fallback that was used previously on that platform. A separate x86_64 run should be added once CI hardware is available.
+
+---
+
 ## 📈 Performance Categories
 
 ### 🚀 Kowito Dominates
@@ -175,11 +218,14 @@ Profile:     bench (optimized)
 Rust:        2024 Edition + SIMD feature
 Target:      Apple Silicon (aarch64)
 SIMD:        NEON (always available on ARM64)
+             AVX2+PCLMULQDQ implemented (v0.2.10); measured on x86_64 only
 ```
 
 ---
 
 ## 📊 Summary Table
+
+### Serialization
 
 | Benchmark | serde_json | sonic_rs | kowito_json_jit | Winner | Gain |
 |-----------|-----------|----------|-----------------|--------|------|
@@ -188,6 +234,14 @@ SIMD:        NEON (always available on ARM64)
 | numeric_8 (ns) | 118.9 | 100.0 | **82.4** | Kowito | 1.4x |
 | hot-loop (µs) | 91.3 | 72.3 | **44.4** | Kowito | 2.1x |
 | large-string (ns) | 2649 | **288.8** | 383.6 | sonic_rs | - |
+
+### Parsing (aarch64 NEON, 12 MB corpus)
+
+| Benchmark | serde_json | simd_json | sonic_rs | kowito | Winner | Gain vs sonic_rs |
+|-----------|-----------|-----------|----------|--------|--------|------------------|
+| scanner_only (ms) | 56.4 | 49.9 | 10.1 | **1.89** | Kowito | **5.3×** |
+| schema_jit (ms) | 56.4 | 49.9 | 10.1 | **1.87** | Kowito | **5.4×** |
+| scanner_only (GiB/s) | 0.23 | 0.26 | 1.29 | **6.84** | Kowito | **5.3×** |
 
 ---
 

@@ -2,9 +2,9 @@
 
 **A high-performance zero-decode JSON parser and schema-JIT serializer for Rust.**
 
-`kowito-json` parses and serializes JSON at memory-bandwidth speeds using ARM NEON Carry-Less Multiplication (`PMULL`), zero-copy tape scanning, and compile-time schema baking via the `#[derive(KJson)]` macro.
+`kowito-json` parses and serializes JSON at memory-bandwidth speeds using ARM NEON Carry-Less Multiplication (`PMULL`), x86_64 AVX2+PCLMULQDQ (v0.2.10), zero-copy tape scanning, and compile-time schema baking via the `#[derive(KJson)]` macro.
 
-> Optimized for Apple Silicon (M-series / aarch64). AVX2 and portable-SIMD paths available.
+> Optimized for Apple Silicon (M-series / aarch64). AVX2+PCLMULQDQ and portable-SIMD paths available.
 
 ## Features
 
@@ -17,25 +17,26 @@
 
 ## Benchmarks
 
-Measured on **Apple Silicon M4**, release profile, using `criterion` (100 samples, 95% CI).
+Measured on **Apple Silicon M4**, release profile, using `criterion` (100 samples, 95% CI).  
+**Note:** x86_64 AVX2+PCLMULQDQ path (implemented v0.2.10) not yet benchmarked; expected +1.5–2.5× speedup vs generic fallback.
 
-### Parsing — 10 MB Massive JSON Array
+### Parsing — 12 MB Real-World JSON Corpus (100k user objects)
 
 **Visual Chart (Higher = Faster)**
 
 ```
-kowito-json ████████████████████████████ 6.45 GiB/s ⭐ FASTEST
-sonic_rs    █████ 1.28 GiB/s
-simd_json   █ 0.27 GiB/s
-serde_json  █ 0.23 GiB/s (baseline)
+kowito-json ████████████████████████████ 6.84 GiB/s ⭐ FASTEST
+sonic_rs    █████ 1.29 GiB/s
+simd_json   █ 0.265 GiB/s
+serde_json  █ 0.234 GiB/s (baseline)
 ```
 
 | Parser | Throughput | vs `serde_json` |
 |:---|:---|:---|
-| **kowito-json** | **~6.45 GiB/s** | **28× faster** |
-| `sonic-rs` | ~1.28 GiB/s | 5.6× faster |
-| `simd-json` | ~0.27 GiB/s | 1.2× faster |
-| `serde_json` | ~0.23 GiB/s | baseline |
+| **kowito-json** | **~6.84 GiB/s** | **29× faster** |
+| `sonic-rs` | ~1.29 GiB/s | 5.5× faster |
+| `simd-json` | ~0.265 GiB/s | 1.1× faster |
+| `serde_json` | ~0.234 GiB/s | baseline |
 
 ---
 
@@ -149,8 +150,8 @@ serde_json  ███ 3.52 GiB/s
 
 ```toml
 [dependencies]
-kowito-json        = "0.2.8"
-kowito-json-derive = "0.2.6"
+kowito-json        = "0.2.10"
+kowito-json-derive = "0.2.8"
 ```
 
 Requires **Rust nightly** (uses `portable_simd`):
