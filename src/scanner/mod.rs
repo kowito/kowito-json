@@ -20,19 +20,21 @@ pub const TOKEN_COLON: u32 = 6 << 28;
 pub const TOKEN_COMMA: u32 = 7 << 28;
 pub const OFFSET_MASK: u32 = 0x0FFF_FFFF;
 
+pub static TAG_TABLE: [u32; 256] = {
+    let mut table = [0u32; 256];
+    table[b'"' as usize] = TOKEN_QUOTE;
+    table[b'{' as usize] = TOKEN_LBRACE;
+    table[b'}' as usize] = TOKEN_RBRACE;
+    table[b'[' as usize] = TOKEN_LBRACKET;
+    table[b']' as usize] = TOKEN_RBRACKET;
+    table[b':' as usize] = TOKEN_COLON;
+    table[b',' as usize] = TOKEN_COMMA;
+    table
+};
+
 #[inline(always)]
 pub fn tag_byte(byte: u8, pos: usize) -> u32 {
-    let tag = match byte {
-        b'"' => TOKEN_QUOTE,
-        b'{' => TOKEN_LBRACE,
-        b'}' => TOKEN_RBRACE,
-        b'[' => TOKEN_LBRACKET,
-        b']' => TOKEN_RBRACKET,
-        b':' => TOKEN_COLON,
-        b',' => TOKEN_COMMA,
-        _ => 0,
-    };
-    tag | (pos as u32)
+    unsafe { *TAG_TABLE.get_unchecked(byte as usize) | (pos as u32) }
 }
 
 pub struct Scanner<'a> {

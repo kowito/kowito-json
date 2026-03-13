@@ -25,18 +25,18 @@ Measured on **Apple Silicon M4**, release profile, using `criterion` (100 sample
 **Visual Chart (Higher = Faster)**
 
 ```
-kowito-json ████████████████████████████ 6.84 GiB/s ⭐ FASTEST
-sonic_rs    █████ 1.29 GiB/s
-simd_json   █ 0.265 GiB/s
-serde_json  █ 0.234 GiB/s (baseline)
+kowito-json ████████████████████████████████ 7.98 GiB/s ⭐ FASTEST
+sonic_rs    █████ 1.28 GiB/s
+simd_json   █ 0.271 GiB/s
+serde_json  █ 0.241 GiB/s (baseline)
 ```
 
 | Parser | Throughput | vs `serde_json` |
 |:---|:---|:---|
-| **kowito-json** | **~6.84 GiB/s** | **29× faster** |
-| `sonic-rs` | ~1.29 GiB/s | 5.5× faster |
-| `simd-json` | ~0.265 GiB/s | 1.1× faster |
-| `serde_json` | ~0.234 GiB/s | baseline |
+| **kowito-json** | **~7.98 GiB/s** | **33× faster** |
+| `sonic-rs` | ~1.28 GiB/s | 5.3× faster |
+| `simd-json` | ~0.271 GiB/s | 1.1× faster |
+| `serde_json` | ~0.241 GiB/s | baseline |
 
 ---
 

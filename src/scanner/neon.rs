@@ -27,35 +27,17 @@ unsafe fn bulk_movemask_4x16(
     c1: uint8x16_t,
     c2: uint8x16_t,
     c3: uint8x16_t,
+    bm: uint8x16_t,
 ) -> u64 {
-    // AND isolates each lane's match into its positional bit (1, 2, 4 … 128 repeated twice).
-    let bm = vld1q_u8(BITMASK.as_ptr());
     let t0 = vandq_u8(c0, bm);
     let t1 = vandq_u8(c1, bm);
     let t2 = vandq_u8(c2, bm);
     let t3 = vandq_u8(c3, bm);
 
-    // Three rounds of pairwise byte-sum to reduce 64 positional bits down to 8 bytes.
-    //
-    // After round 1 (vpaddq t0,t1):
-    //   byte k (k<8):  t0[2k] | t0[2k+1]   (2 adjacent bits of c0 OR'd via orthogonal weights)
-    //   byte k (k≥8):  t1[2(k-8)] | t1[2(k-8)+1]
-    //
-    // After round 2 (vpaddq p01,p23): each output byte holds 4 bits from one original vector.
-    //   byte 0: bits 0-3  of c0,  byte 1: bits 4-7  of c0
-    //   byte 2: bits 8-11 of c0,  byte 3: bits 12-15 of c0
-    //   byte 4-7: same for c1,  byte 8-11: c2,  byte 12-15: c3
-    //
-    // After round 3 (vpaddq p0123,p0123) — self-fold:
-    //   byte 0: bits 0-7  of c0 (the low byte of c0's 16-bit mask)
-    //   byte 1: bits 8-15 of c0 (the high byte)
-    //   byte 2-3: c1's mask bytes,  byte 4-5: c2's,  byte 6-7: c3's
-    //
-    // fmov then extracts those 8 bytes as a u64 in one instruction.
     let p01 = vpaddq_u8(t0, t1);
     let p23 = vpaddq_u8(t2, t3);
     let p0123 = vpaddq_u8(p01, p23);
-    let r = vpaddq_u8(p0123, p0123); // self-fold: low 8 bytes hold all 4 × 16-bit masks
+    let r = vpaddq_u8(p0123, p0123);
 
     vgetq_lane_u64(vreinterpretq_u64_u8(r), 0)
 }
@@ -65,24 +47,24 @@ unsafe fn bulk_movemask_4x16(
 // ---------------------------------------------------------------------------
 
 macro_rules! struct_or {
-    ($v:expr) => {
+    ($v:expr) => {{
+        // Merge {/[ and }/] by setting bit 5.
+        // { (123) / [ (91) -> 123
+        // } (125) / ] (93) -> 125
+        // : (58) -> 90
+        // , (44) -> 76
+        let v_merged = vorrq_u8($v, vdupq_n_u8(32));
         vorrq_u8(
             vorrq_u8(
                 vorrq_u8(
-                    vorrq_u8(
-                        vorrq_u8(
-                            vceqq_u8($v, vdupq_n_u8(b'{')),
-                            vceqq_u8($v, vdupq_n_u8(b'}')),
-                        ),
-                        vceqq_u8($v, vdupq_n_u8(b'[')),
-                    ),
-                    vceqq_u8($v, vdupq_n_u8(b']')),
+                    vceqq_u8(v_merged, vdupq_n_u8(123)),
+                    vceqq_u8(v_merged, vdupq_n_u8(125)),
                 ),
-                vceqq_u8($v, vdupq_n_u8(b':')),
+                vceqq_u8(v_merged, vdupq_n_u8(90)),
             ),
-            vceqq_u8($v, vdupq_n_u8(b',')),
+            vceqq_u8(v_merged, vdupq_n_u8(76)),
         )
-    };
+    }};
 }
 
 // ---------------------------------------------------------------------------
@@ -112,6 +94,8 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
     // Broadcast quote byte once — reused for all 4 comparisons each iteration.
     let q_splat = vdupq_n_u8(b'"');
 
+    let bm = vld1q_u8(BITMASK.as_ptr());
+
     // -----------------------------------------------------------------------
     // 64-byte main loop
     // -----------------------------------------------------------------------
@@ -128,6 +112,7 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
             vceqq_u8(v1, q_splat),
             vceqq_u8(v2, q_splat),
             vceqq_u8(v3, q_splat),
+            bm,
         );
 
         // --- Structural masks (6 comparisons ORed per vector → bulk reduction) ---
@@ -136,6 +121,7 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
             struct_or!(v1),
             struct_or!(v2),
             struct_or!(v3),
+            bm,
         );
 
         // --- Full 64-bit PMULL string detection ---
@@ -185,10 +171,15 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
         // Use same bulk routine but pass zero vectors for c2/c3 — they go to the
         // upper 32 bits which we throw away.
         let zero = vdupq_n_u8(0);
-        let q32 =
-            bulk_movemask_4x16(vceqq_u8(v0, q_splat), vceqq_u8(v1, q_splat), zero, zero) as u32; // lower 32 bits = mask for v0 and v1
+        let q32 = bulk_movemask_4x16(
+            vceqq_u8(v0, q_splat),
+            vceqq_u8(v1, q_splat),
+            zero,
+            zero,
+            bm,
+        ) as u32; // lower 32 bits = mask for v0 and v1
 
-        let s32 = bulk_movemask_4x16(struct_or!(v0), struct_or!(v1), zero, zero) as u32;
+        let s32 = bulk_movemask_4x16(struct_or!(v0), struct_or!(v1), zero, zero, bm) as u32;
 
         let cumulative: u64 = vmull_p64(q32 as u64, !0u64) as u64;
         let string32 = (cumulative ^ prev_in_string) as u32;

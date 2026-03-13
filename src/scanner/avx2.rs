@@ -37,6 +37,13 @@ pub unsafe fn scan_avx2(bytes: &[u8], tape: &mut [u32]) -> usize {
     let col_splat = _mm256_set1_epi8(b':' as i8);
     let com_splat = _mm256_set1_epi8(b',' as i8);
 
+    // Optimized comparison targets for merged character classes (bit 5 set).
+    let m_123 = _mm256_set1_epi8(123); // { and [
+    let m_125 = _mm256_set1_epi8(125); // } and ]
+    let m_90 = _mm256_set1_epi8(90);   // : (| 32)
+    let m_76 = _mm256_set1_epi8(76);   // , (| 32)
+    let or_32 = _mm256_set1_epi8(32);
+
     // PCLMULQDQ multiplicand: low 64 bits all-ones.
     // CLMUL(quote_mask, this) = XOR prefix-sum of quote_mask bits.
     let clmul_ones = _mm_cvtsi64_si128(!0i64);
@@ -44,24 +51,19 @@ pub unsafe fn scan_avx2(bytes: &[u8], tape: &mut [u32]) -> usize {
     // Macro: OR-reduce six structural character comparisons for one __m256i.
     // Defined once; usable in both the 64-byte and 32-byte loops below.
     macro_rules! struct_or {
-        ($v:expr) => {
+        ($v:expr) => {{
+            let v_merged = _mm256_or_si256($v, or_32);
             _mm256_or_si256(
                 _mm256_or_si256(
-                    _mm256_or_si256(
-                        _mm256_cmpeq_epi8($v, lb_splat),
-                        _mm256_cmpeq_epi8($v, rb_splat),
-                    ),
-                    _mm256_or_si256(
-                        _mm256_cmpeq_epi8($v, lsb_splat),
-                        _mm256_cmpeq_epi8($v, rsb_splat),
-                    ),
+                    _mm256_cmpeq_epi8(v_merged, m_123),
+                    _mm256_cmpeq_epi8(v_merged, m_125),
                 ),
                 _mm256_or_si256(
-                    _mm256_cmpeq_epi8($v, col_splat),
-                    _mm256_cmpeq_epi8($v, com_splat),
+                    _mm256_cmpeq_epi8(v_merged, m_90),
+                    _mm256_cmpeq_epi8(v_merged, m_76),
                 ),
             )
-        };
+        }};
     }
 
     // ------------------------------------------------------------------
