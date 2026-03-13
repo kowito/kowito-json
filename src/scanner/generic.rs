@@ -261,6 +261,7 @@ impl<'a> Scanner<'a> {
 }
 
 #[cfg(test)]
+#[allow(clippy::identity_op)]
 mod tests {
     use super::*;
 

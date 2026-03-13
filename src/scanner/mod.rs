@@ -7,19 +7,19 @@ pub mod generic;
 pub mod neon;
 #[cfg(target_arch = "aarch64")]
 pub mod sve2;
- 
+
 /// Tape Entry Format:
 /// - Bits 28-31: Token Tag (Type)
 /// - Bits 0-27: Byte Offset in source
-pub const TOKEN_QUOTE: u32    = 1 << 28;
-pub const TOKEN_LBRACE: u32   = 2 << 28;
-pub const TOKEN_RBRACE: u32   = 3 << 28;
+pub const TOKEN_QUOTE: u32 = 1 << 28;
+pub const TOKEN_LBRACE: u32 = 2 << 28;
+pub const TOKEN_RBRACE: u32 = 3 << 28;
 pub const TOKEN_LBRACKET: u32 = 4 << 28;
 pub const TOKEN_RBRACKET: u32 = 5 << 28;
-pub const TOKEN_COLON: u32    = 6 << 28;
-pub const TOKEN_COMMA: u32    = 7 << 28;
-pub const OFFSET_MASK: u32    = 0x0FFF_FFFF;
- 
+pub const TOKEN_COLON: u32 = 6 << 28;
+pub const TOKEN_COMMA: u32 = 7 << 28;
+pub const OFFSET_MASK: u32 = 0x0FFF_FFFF;
+
 #[inline(always)]
 pub fn tag_byte(byte: u8, pos: usize) -> u32 {
     let tag = match byte {
@@ -78,6 +78,7 @@ impl<'a> Scanner<'a> {
 }
 
 #[cfg(test)]
+#[allow(clippy::identity_op)]
 mod tests {
     use super::*;
 

@@ -29,11 +29,10 @@ impl<'a> KView<'a> {
 }
 
 #[cfg(test)]
+#[allow(clippy::identity_op)]
 mod tests {
     use super::*;
-    use crate::scanner::{
-        TOKEN_COLON, TOKEN_LBRACE, TOKEN_QUOTE, TOKEN_RBRACE,
-    };
+    use crate::scanner::{TOKEN_COLON, TOKEN_LBRACE, TOKEN_QUOTE, TOKEN_RBRACE};
 
     #[test]
     fn test_view_initialization() {
