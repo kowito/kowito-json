@@ -1,4 +1,6 @@
 /target
+Cargo.lock
+**/*.rs.bk
+.vscode/
 rust_out
 librust_out.rlib
-.vscode/

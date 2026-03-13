@@ -28,13 +28,13 @@ pub unsafe fn scan_avx2(bytes: &[u8], tape: &mut [u32]) -> usize {
     let mut prev_in_string: u64 = 0;
 
     // Splatted comparison constants — hoisted out of the loop.
-    let q_splat   = _mm256_set1_epi8(b'"'  as i8);
-    let lb_splat  = _mm256_set1_epi8(b'{'  as i8);
-    let rb_splat  = _mm256_set1_epi8(b'}'  as i8);
-    let lsb_splat = _mm256_set1_epi8(b'['  as i8);
-    let rsb_splat = _mm256_set1_epi8(b']'  as i8);
-    let col_splat = _mm256_set1_epi8(b':'  as i8);
-    let com_splat = _mm256_set1_epi8(b','  as i8);
+    let q_splat = _mm256_set1_epi8(b'"' as i8);
+    let lb_splat = _mm256_set1_epi8(b'{' as i8);
+    let rb_splat = _mm256_set1_epi8(b'}' as i8);
+    let lsb_splat = _mm256_set1_epi8(b'[' as i8);
+    let rsb_splat = _mm256_set1_epi8(b']' as i8);
+    let col_splat = _mm256_set1_epi8(b':' as i8);
+    let com_splat = _mm256_set1_epi8(b',' as i8);
 
     // PCLMULQDQ multiplicand: low 64 bits all-ones.
     // CLMUL(quote_mask, this) = XOR prefix-sum of quote_mask bits.
@@ -70,7 +70,7 @@ pub unsafe fn scan_avx2(bytes: &[u8], tape: &mut [u32]) -> usize {
         let ptr = bytes.as_ptr().add(i);
 
         // Load two 32-byte registers spanning the full 64-byte block.
-        let v0 = _mm256_loadu_si256(ptr         as *const __m256i);
+        let v0 = _mm256_loadu_si256(ptr as *const __m256i);
         let v1 = _mm256_loadu_si256(ptr.add(32) as *const __m256i);
 
         // Quote mask: combine two 32-bit movemask results into one u64.
@@ -87,14 +87,14 @@ pub unsafe fn scan_avx2(bytes: &[u8], tape: &mut [u32]) -> usize {
         // Place quote_mask in the low 64 bits of a __m128i, then carry-less
         // multiply with all-ones.  Low 64 bits of the 128-bit product = the
         // XOR prefix-sum: bit i = parity of quotes at positions 0..=i.
-        let q_vec     = _mm_cvtsi64_si128(quote_mask as i64);
-        let prod      = _mm_clmulepi64_si128(q_vec, clmul_ones, 0x00);
+        let q_vec = _mm_cvtsi64_si128(quote_mask as i64);
+        let prod = _mm_clmulepi64_si128(q_vec, clmul_ones, 0x00);
         let cumulative = _mm_cvtsi128_si64(prod) as u64;
 
         // XOR with prev_in_string to account for cross-block carry, then
         // sign-extend the MSB to prepare the carry for the next iteration.
-        let string64     = cumulative ^ prev_in_string;
-        prev_in_string   = ((string64 as i64) >> 63) as u64;
+        let string64 = cumulative ^ prev_in_string;
+        prev_in_string = ((string64 as i64) >> 63) as u64;
 
         // Split into two 32-bit halves — mirrors the NEON drain pattern.
         let string_lo = string64 as u32;
@@ -131,15 +131,15 @@ pub unsafe fn scan_avx2(bytes: &[u8], tape: &mut [u32]) -> usize {
         let ptr = bytes.as_ptr().add(i);
         let v0 = _mm256_loadu_si256(ptr as *const __m256i);
 
-        let quote_mask32  = _mm256_movemask_epi8(_mm256_cmpeq_epi8(v0, q_splat)) as u32;
+        let quote_mask32 = _mm256_movemask_epi8(_mm256_cmpeq_epi8(v0, q_splat)) as u32;
         let struct_mask32 = _mm256_movemask_epi8(struct_or!(v0)) as u32;
 
-        let q_vec     = _mm_cvtsi64_si128(quote_mask32 as i64);
-        let prod      = _mm_clmulepi64_si128(q_vec, clmul_ones, 0x00);
+        let q_vec = _mm_cvtsi64_si128(quote_mask32 as i64);
+        let prod = _mm_clmulepi64_si128(q_vec, clmul_ones, 0x00);
         // Only the low 32 bits matter for a 32-byte window.
         let cumulative32 = _mm_cvtsi128_si64(prod) as u32;
-        let string32     = cumulative32 ^ prev_in_string as u32;
-        prev_in_string   = ((string32 as i32) >> 31) as u64;
+        let string32 = cumulative32 ^ prev_in_string as u32;
+        prev_in_string = ((string32 as i32) >> 31) as u64;
 
         let mut active = (struct_mask32 & !string32) | quote_mask32;
         while active != 0 {

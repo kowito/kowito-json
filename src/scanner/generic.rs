@@ -225,11 +225,9 @@ impl<'a> Scanner<'a> {
                             tape_idx += 1;
                         }
                     }
-                    b'{' | b'}' | b'[' | b']' | b':' | b',' => {
-                        if tape_idx < tape.len() {
-                            tape[tape_idx] = i as u32;
-                            tape_idx += 1;
-                        }
+                    b'{' | b'}' | b'[' | b']' | b':' | b',' if tape_idx < tape.len() => {
+                        tape[tape_idx] = i as u32;
+                        tape_idx += 1;
                     }
                     _ => {}
                 }

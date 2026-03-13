@@ -1,7 +1,11 @@
+#[cfg(target_arch = "aarch64")]
 pub mod amx;
+#[cfg(target_arch = "x86_64")]
 pub mod avx2;
 pub mod generic;
+#[cfg(target_arch = "aarch64")]
 pub mod neon;
+#[cfg(target_arch = "aarch64")]
 pub mod sve2;
 
 pub struct Scanner<'a> {
@@ -122,16 +126,16 @@ mod tests {
     #[test]
     fn test_dynamic_scan_string_spans_64byte_boundary() {
         let mut json = Vec::with_capacity(140);
-        json.extend_from_slice(b"{\"");                  //   0– 1 : { "
-        json.extend(std::iter::repeat(b'A').take(57));   //   2–58 : key (57 As)
-        json.extend_from_slice(b"\":\"");                // 59–61 : " : "
-        json.extend(std::iter::repeat(b'a').take(2));    // 62–63 : end of block 0 (inside string)
+        json.extend_from_slice(b"{\""); //   0– 1 : { "
+        json.extend(std::iter::repeat_n(b'A', 57)); //   2–58 : key (57 As)
+        json.extend_from_slice(b"\":\""); // 59–61 : " : "
+        json.extend(std::iter::repeat_n(b'a', 2)); // 62–63 : end of block 0 (inside string)
         // --- 64-byte block boundary ---
-        json.extend_from_slice(b"[");                    //    64 : structural INSIDE string → suppressed
-        json.extend(std::iter::repeat(b'a').take(56));   // 65–120: string interior
-        json.extend_from_slice(b"\",\"k2\":");           // 121–127: " , " k 2 " :
+        json.extend_from_slice(b"["); //    64 : structural INSIDE string → suppressed
+        json.extend(std::iter::repeat_n(b'a', 56)); // 65–120: string interior
+        json.extend_from_slice(b"\",\"k2\":"); // 121–127: " , " k 2 " :
         // --- scalar tail (5 bytes, starts outside string) ---
-        json.extend_from_slice(b"\"v2\"}");              // 128–132: " v 2 " }
+        json.extend_from_slice(b"\"v2\"}"); // 128–132: " v 2 " }
 
         assert_eq!(json.len(), 133, "input length sanity check");
 
@@ -139,7 +143,10 @@ mod tests {
         let mut tape = vec![0u32; 20];
         let count = scanner.scan(&mut tape);
 
-        assert_eq!(&tape[..count], &[0, 1, 59, 60, 61, 121, 122, 123, 126, 127, 128, 131, 132],
-            "unexpected tape; count={count}");
+        assert_eq!(
+            &tape[..count],
+            &[0, 1, 59, 60, 61, 121, 122, 123, 126, 127, 128, 131, 132],
+            "unexpected tape; count={count}"
+        );
     }
 }

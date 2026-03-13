@@ -1,4 +1,5 @@
 #![allow(unsafe_op_in_unsafe_fn)]
+#[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
 // Positional bitmask used by both the bulk-reduction movemask and single-vector fallback.
@@ -224,11 +225,9 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
                 in_string = !in_string;
             } else if !in_string {
                 match b {
-                    b'{' | b'}' | b'[' | b']' | b':' | b',' => {
-                        if tape_idx < tape.len() {
-                            *tape.get_unchecked_mut(tape_idx) = i as u32;
-                            tape_idx += 1;
-                        }
+                    b'{' | b'}' | b'[' | b']' | b':' | b',' if tape_idx < tape.len() => {
+                        *tape.get_unchecked_mut(tape_idx) = i as u32;
+                        tape_idx += 1;
                     }
                     _ => {}
                 }
