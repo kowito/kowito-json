@@ -51,8 +51,8 @@ macro_rules! struct_or {
         // Merge {/[ and }/] by setting bit 5.
         // { (123) / [ (91) -> 123
         // } (125) / ] (93) -> 125
-        // : (58) -> 90
-        // , (44) -> 76
+        // : (0x3A = 58) -> bit 5 is already set, remains 58
+        // , (0x2C = 44) -> bit 5 is already set, remains 44
         let v_merged = vorrq_u8($v, vdupq_n_u8(32));
         vorrq_u8(
             vorrq_u8(
@@ -60,9 +60,9 @@ macro_rules! struct_or {
                     vceqq_u8(v_merged, vdupq_n_u8(123)),
                     vceqq_u8(v_merged, vdupq_n_u8(125)),
                 ),
-                vceqq_u8(v_merged, vdupq_n_u8(90)),
+                vceqq_u8(v_merged, vdupq_n_u8(58)),
             ),
-            vceqq_u8(v_merged, vdupq_n_u8(76)),
+            vceqq_u8(v_merged, vdupq_n_u8(44)),
         )
     }};
 }
@@ -171,13 +171,8 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
         // Use same bulk routine but pass zero vectors for c2/c3 — they go to the
         // upper 32 bits which we throw away.
         let zero = vdupq_n_u8(0);
-        let q32 = bulk_movemask_4x16(
-            vceqq_u8(v0, q_splat),
-            vceqq_u8(v1, q_splat),
-            zero,
-            zero,
-            bm,
-        ) as u32; // lower 32 bits = mask for v0 and v1
+        let q32 =
+            bulk_movemask_4x16(vceqq_u8(v0, q_splat), vceqq_u8(v1, q_splat), zero, zero, bm) as u32; // lower 32 bits = mask for v0 and v1
 
         let s32 = bulk_movemask_4x16(struct_or!(v0), struct_or!(v1), zero, zero, bm) as u32;
 

@@ -40,8 +40,8 @@ pub unsafe fn scan_avx2(bytes: &[u8], tape: &mut [u32]) -> usize {
     // Optimized comparison targets for merged character classes (bit 5 set).
     let m_123 = _mm256_set1_epi8(123); // { and [
     let m_125 = _mm256_set1_epi8(125); // } and ]
-    let m_90 = _mm256_set1_epi8(90);   // : (| 32)
-    let m_76 = _mm256_set1_epi8(76);   // , (| 32)
+    let m_58 = _mm256_set1_epi8(58); // : (| 32 remains 58)
+    let m_44 = _mm256_set1_epi8(44); // , (| 32 remains 44)
     let or_32 = _mm256_set1_epi8(32);
 
     // PCLMULQDQ multiplicand: low 64 bits all-ones.
@@ -59,8 +59,8 @@ pub unsafe fn scan_avx2(bytes: &[u8], tape: &mut [u32]) -> usize {
                     _mm256_cmpeq_epi8(v_merged, m_125),
                 ),
                 _mm256_or_si256(
-                    _mm256_cmpeq_epi8(v_merged, m_90),
-                    _mm256_cmpeq_epi8(v_merged, m_76),
+                    _mm256_cmpeq_epi8(v_merged, m_58),
+                    _mm256_cmpeq_epi8(v_merged, m_44),
                 ),
             )
         }};
