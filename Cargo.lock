@@ -362,7 +362,7 @@ dependencies = [
 
 [[package]]
 name = "kowito-json"
-version = "0.2.11"
+version = "0.2.12"
 dependencies = [
  "criterion",
  "fxhash",
