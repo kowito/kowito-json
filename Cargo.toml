@@ -1,6 +1,6 @@
 [package]
 name = "kowito-json"
-version = "0.2.14"
+version = "0.2.15"
 edition = "2024"
 authors = ["Kowito <hi@kowito.com>"]
 description = "A high-performance zero-decode JSON parser using SIMD, ARM NEON PMULL, and schema JIT binding."
