@@ -362,12 +362,12 @@ dependencies = [
 
 [[package]]
 name = "kowito-json"
-version = "0.2.17"
+version = "0.2.18"
 dependencies = [
  "criterion",
  "fxhash",
  "itoa",
- "kowito-json-derive 0.2.16",
+ "kowito-json-derive 0.2.17",
  "pulp",
  "ryu",
  "serde",
@@ -378,9 +378,9 @@ dependencies = [
 
 [[package]]
 name = "kowito-json-derive"
-version = "0.2.16"
+version = "0.2.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff1442a5c6df5a74e16f0c335d999688500865129639f111f2072f8519660f4c"
+checksum = "cb2783532841330bdc84ab5cbc26b233eef9253d047ad468899c1150b78792c3"
 dependencies = [
  "itoa",
  "proc-macro2",
@@ -391,7 +391,7 @@ dependencies = [
 
 [[package]]
 name = "kowito-json-derive"
-version = "0.2.17"
+version = "0.2.18"
 dependencies = [
  "itoa",
  "proc-macro2",
