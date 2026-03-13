@@ -22,6 +22,7 @@ use std::arch::x86_64::*;
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,pclmulqdq")]
 pub unsafe fn scan_avx2(bytes: &[u8], tape: &mut [u32]) -> usize {
+    use crate::scanner::tag_byte;
     let mut tape_idx = 0usize;
     let mut i = 0usize;
     // All-zeros  → not in a string at start; all-ones → in a string at start.
@@ -111,13 +112,15 @@ pub unsafe fn scan_avx2(bytes: &[u8], tape: &mut [u32]) -> usize {
         while active_lo != 0 {
             let tz = active_lo.trailing_zeros();
             active_lo &= active_lo - 1;
-            *tape.get_unchecked_mut(tape_idx) = i as u32 + tz;
+            let pos = i + tz as usize;
+            *tape.get_unchecked_mut(tape_idx) = tag_byte(*bytes.get_unchecked(pos), pos);
             tape_idx += 1;
         }
         while active_hi != 0 {
             let tz = active_hi.trailing_zeros();
             active_hi &= active_hi - 1;
-            *tape.get_unchecked_mut(tape_idx) = i as u32 + 32 + tz;
+            let pos = i + 32 + tz as usize;
+            *tape.get_unchecked_mut(tape_idx) = tag_byte(*bytes.get_unchecked(pos), pos);
             tape_idx += 1;
         }
 
@@ -145,7 +148,8 @@ pub unsafe fn scan_avx2(bytes: &[u8], tape: &mut [u32]) -> usize {
         while active != 0 {
             let tz = active.trailing_zeros();
             active &= active - 1;
-            *tape.get_unchecked_mut(tape_idx) = i as u32 + tz;
+            let pos = i + tz as usize;
+            *tape.get_unchecked_mut(tape_idx) = tag_byte(*bytes.get_unchecked(pos), pos);
             tape_idx += 1;
         }
 
@@ -169,7 +173,7 @@ pub unsafe fn scan_avx2(bytes: &[u8], tape: &mut [u32]) -> usize {
                 escape = true;
             } else if b == b'"' {
                 if tape_idx < tape.len() {
-                    *tape.get_unchecked_mut(tape_idx) = i as u32;
+                    *tape.get_unchecked_mut(tape_idx) = tag_byte(b, i);
                     tape_idx += 1;
                 }
                 in_string = !in_string;
@@ -177,7 +181,7 @@ pub unsafe fn scan_avx2(bytes: &[u8], tape: &mut [u32]) -> usize {
                 match b {
                     b'{' | b'}' | b'[' | b']' | b':' | b',' => {
                         if tape_idx < tape.len() {
-                            *tape.get_unchecked_mut(tape_idx) = i as u32;
+                            *tape.get_unchecked_mut(tape_idx) = tag_byte(b, i);
                             tape_idx += 1;
                         }
                     }

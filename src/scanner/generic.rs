@@ -102,6 +102,26 @@ fn compute_masks_scalar(bytes: &[u8], offset: usize) -> [u32; 8] {
     masks
 }
 
+use super::{
+    TOKEN_COLON, TOKEN_COMMA, TOKEN_LBRACE, TOKEN_LBRACKET, TOKEN_QUOTE, TOKEN_RBRACE,
+    TOKEN_RBRACKET,
+};
+
+#[inline(always)]
+fn tag_byte(byte: u8, pos: usize) -> u32 {
+    let tag = match byte {
+        b'"' => TOKEN_QUOTE,
+        b'{' => TOKEN_LBRACE,
+        b'}' => TOKEN_RBRACE,
+        b'[' => TOKEN_LBRACKET,
+        b']' => TOKEN_RBRACKET,
+        b':' => TOKEN_COLON,
+        b',' => TOKEN_COMMA,
+        _ => 0,
+    };
+    tag | (pos as u32)
+}
+
 // ---------------------------------------------------------------------------
 
 /// Implement a SIMD block processor (e.g., using pulp) to find structural characters ({, }, :, ,, ").
@@ -156,7 +176,7 @@ impl<'a> Scanner<'a> {
                     } else if b == b'"' {
                         in_string = false;
                         if tape_idx < tape.len() {
-                            tape[tape_idx] = i as u32; // End of string quote
+                            tape[tape_idx] = TOKEN_QUOTE | (i as u32); // End of string quote
                             tape_idx += 1;
                         }
                         i += 1;
@@ -179,18 +199,19 @@ impl<'a> Scanner<'a> {
                     let tz = structurals.trailing_zeros();
                     structurals &= structurals - 1; // clear lowest set bit
                     let pos = i + tz as usize;
+                    let byte = unsafe { *bytes.get_unchecked(pos) };
 
-                    if bytes[pos] == b'"' {
+                    if byte == b'"' {
                         in_string = true;
                         if tape_idx < tape.len() {
-                            tape[tape_idx] = pos as u32;
+                            tape[tape_idx] = TOKEN_QUOTE | (pos as u32);
                             tape_idx += 1;
                         }
                         i = pos + 1;
                         break; // back to main loop to handle string parsing
                     } else {
                         if tape_idx < tape.len() {
-                            tape[tape_idx] = pos as u32;
+                            tape[tape_idx] = tag_byte(byte, pos);
                             tape_idx += 1;
                         }
                     }
@@ -212,7 +233,7 @@ impl<'a> Scanner<'a> {
                 } else if b == b'"' {
                     in_string = false;
                     if tape_idx < tape.len() {
-                        tape[tape_idx] = i as u32;
+                        tape[tape_idx] = TOKEN_QUOTE | (i as u32);
                         tape_idx += 1;
                     }
                 }
@@ -221,12 +242,12 @@ impl<'a> Scanner<'a> {
                     b'"' => {
                         in_string = true;
                         if tape_idx < tape.len() {
-                            tape[tape_idx] = i as u32;
+                            tape[tape_idx] = TOKEN_QUOTE | (i as u32);
                             tape_idx += 1;
                         }
                     }
                     b'{' | b'}' | b'[' | b']' | b':' | b',' if tape_idx < tape.len() => {
-                        tape[tape_idx] = i as u32;
+                        tape[tape_idx] = tag_byte(b, i);
                         tape_idx += 1;
                     }
                     _ => {}
@@ -267,7 +288,18 @@ mod tests {
         // '"' at 13 (end string)
         // '}' at 14
         assert_eq!(count, 7);
-        assert_eq!(&tape[..count], &[0, 1, 5, 6, 7, 13, 14]);
+        assert_eq!(
+            &tape[..count],
+            &[
+                TOKEN_LBRACE | 0,
+                TOKEN_QUOTE | 1,
+                TOKEN_QUOTE | 5,
+                TOKEN_COLON | 6,
+                TOKEN_QUOTE | 7,
+                TOKEN_QUOTE | 13,
+                TOKEN_RBRACE | 14
+            ]
+        );
     }
 
     #[test]
@@ -287,7 +319,18 @@ mod tests {
         // '"' at 15 (end string)
         // '}' at 16
         assert_eq!(count, 7);
-        assert_eq!(&tape[..count], &[0, 1, 5, 6, 7, 15, 16]);
+        assert_eq!(
+            &tape[..count],
+            &[
+                TOKEN_LBRACE | 0,
+                TOKEN_QUOTE | 1,
+                TOKEN_QUOTE | 5,
+                TOKEN_COLON | 6,
+                TOKEN_QUOTE | 7,
+                TOKEN_QUOTE | 15,
+                TOKEN_RBRACE | 16
+            ]
+        );
     }
 
     #[test]
@@ -299,7 +342,15 @@ mod tests {
 
         // '[' at 0, ',' at 2, ',' at 8, ']' at 14
         assert_eq!(count, 4);
-        assert_eq!(&tape[..count], &[0, 2, 8, 14]);
+        assert_eq!(
+            &tape[..count],
+            &[
+                TOKEN_LBRACKET | 0,
+                TOKEN_COMMA | 2,
+                TOKEN_COMMA | 8,
+                TOKEN_RBRACKET | 14
+            ]
+        );
     }
 
     #[test]
@@ -327,8 +378,23 @@ mod tests {
         // ',' at 11
         // ',' at 16
         // ']' at 26
+        // Expected structural characters:
+        // '[' at 0
+        // ',' at 4
+        // ',' at 11
+        // ',' at 16
+        // ']' at 26
         assert_eq!(count, 5);
-        assert_eq!(&tape[..count], &[0, 4, 11, 16, 26]);
+        assert_eq!(
+            &tape[..count],
+            &[
+                TOKEN_LBRACKET | 0,
+                TOKEN_COMMA | 4,
+                TOKEN_COMMA | 11,
+                TOKEN_COMMA | 16,
+                TOKEN_RBRACKET | 26
+            ]
+        );
     }
 
     #[test]
@@ -344,8 +410,23 @@ mod tests {
         // '"' at 5
         // ':' at 6
         // '"' at 7
+        // Should capture:
+        // '{' at 0
+        // '"' at 1
+        // '"' at 5
+        // ':' at 6
+        // '"' at 7
         assert_eq!(count, 5);
-        assert_eq!(&tape[..count], &[0, 1, 5, 6, 7]);
+        assert_eq!(
+            &tape[..count],
+            &[
+                TOKEN_LBRACE | 0,
+                TOKEN_QUOTE | 1,
+                TOKEN_QUOTE | 5,
+                TOKEN_COLON | 6,
+                TOKEN_QUOTE | 7
+            ]
+        );
     }
 
     #[test]

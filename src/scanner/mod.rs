@@ -7,6 +7,33 @@ pub mod generic;
 pub mod neon;
 #[cfg(target_arch = "aarch64")]
 pub mod sve2;
+ 
+/// Tape Entry Format:
+/// - Bits 28-31: Token Tag (Type)
+/// - Bits 0-27: Byte Offset in source
+pub const TOKEN_QUOTE: u32    = 1 << 28;
+pub const TOKEN_LBRACE: u32   = 2 << 28;
+pub const TOKEN_RBRACE: u32   = 3 << 28;
+pub const TOKEN_LBRACKET: u32 = 4 << 28;
+pub const TOKEN_RBRACKET: u32 = 5 << 28;
+pub const TOKEN_COLON: u32    = 6 << 28;
+pub const TOKEN_COMMA: u32    = 7 << 28;
+pub const OFFSET_MASK: u32    = 0x0FFF_FFFF;
+ 
+#[inline(always)]
+pub fn tag_byte(byte: u8, pos: usize) -> u32 {
+    let tag = match byte {
+        b'"' => TOKEN_QUOTE,
+        b'{' => TOKEN_LBRACE,
+        b'}' => TOKEN_RBRACE,
+        b'[' => TOKEN_LBRACKET,
+        b']' => TOKEN_RBRACKET,
+        b':' => TOKEN_COLON,
+        b',' => TOKEN_COMMA,
+        _ => 0,
+    };
+    tag | (pos as u32)
+}
 
 pub struct Scanner<'a> {
     input: &'a [u8],
@@ -62,7 +89,18 @@ mod tests {
         let count = scanner.scan(&mut tape);
 
         assert_eq!(count, 7);
-        assert_eq!(&tape[..count], &[0, 1, 5, 6, 7, 13, 14]);
+        assert_eq!(
+            &tape[..count],
+            &[
+                TOKEN_LBRACE | 0,
+                TOKEN_QUOTE | 1,
+                TOKEN_QUOTE | 5,
+                TOKEN_COLON | 6,
+                TOKEN_QUOTE | 7,
+                TOKEN_QUOTE | 13,
+                TOKEN_RBRACE | 14
+            ]
+        );
     }
 
     #[test]
@@ -73,7 +111,18 @@ mod tests {
         let count = scanner.scan(&mut tape);
 
         assert_eq!(count, 7);
-        assert_eq!(&tape[..count], &[0, 1, 5, 6, 7, 15, 16]);
+        assert_eq!(
+            &tape[..count],
+            &[
+                TOKEN_LBRACE | 0,
+                TOKEN_QUOTE | 1,
+                TOKEN_QUOTE | 5,
+                TOKEN_COLON | 6,
+                TOKEN_QUOTE | 7,
+                TOKEN_QUOTE | 15,
+                TOKEN_RBRACE | 16
+            ]
+        );
     }
 
     #[test]
@@ -84,7 +133,15 @@ mod tests {
         let count = scanner.scan(&mut tape);
 
         assert_eq!(count, 4);
-        assert_eq!(&tape[..count], &[0, 2, 8, 14]);
+        assert_eq!(
+            &tape[..count],
+            &[
+                TOKEN_LBRACKET | 0,
+                TOKEN_COMMA | 2,
+                TOKEN_COMMA | 8,
+                TOKEN_RBRACKET | 14
+            ]
+        );
     }
 
     /// Regression test for cross-block string detection.
@@ -145,7 +202,21 @@ mod tests {
 
         assert_eq!(
             &tape[..count],
-            &[0, 1, 59, 60, 61, 121, 122, 123, 126, 127, 128, 131, 132],
+            &[
+                TOKEN_LBRACE | 0,
+                TOKEN_QUOTE | 1,
+                TOKEN_QUOTE | 59,
+                TOKEN_COLON | 60,
+                TOKEN_QUOTE | 61,
+                TOKEN_QUOTE | 121,
+                TOKEN_COMMA | 122,
+                TOKEN_QUOTE | 123,
+                TOKEN_QUOTE | 126,
+                TOKEN_COLON | 127,
+                TOKEN_QUOTE | 128,
+                TOKEN_QUOTE | 131,
+                TOKEN_RBRACE | 132
+            ],
             "unexpected tape; count={count}"
         );
     }

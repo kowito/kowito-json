@@ -31,11 +31,22 @@ impl<'a> KView<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::scanner::{
+        TOKEN_COLON, TOKEN_LBRACE, TOKEN_QUOTE, TOKEN_RBRACE,
+    };
 
     #[test]
     fn test_view_initialization() {
         let json = b"{\"key\":\"value\"}";
-        let tape = vec![0, 1, 5, 6, 7, 13, 14];
+        let tape = vec![
+            TOKEN_LBRACE | 0,
+            TOKEN_QUOTE | 1,
+            TOKEN_QUOTE | 5,
+            TOKEN_COLON | 6,
+            TOKEN_QUOTE | 7,
+            TOKEN_QUOTE | 13,
+            TOKEN_RBRACE | 14,
+        ];
         let view = KView::new(json, &tape);
 
         assert_eq!(view.source.len(), 15);

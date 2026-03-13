@@ -212,6 +212,32 @@ macro_rules! drain_escape_vec {
                 }
             }
             $start = pos + 1;
+
+            // Manual unroll: process second bit if present
+            if m != 0 {
+                let tz = m.trailing_zeros() as usize;
+                m &= m.wrapping_sub(1);
+                let pos = $base + tz;
+                if $start < pos {
+                    $buf.extend_from_slice(unsafe { $bytes.get_unchecked($start..pos) });
+                }
+                let byte = unsafe { *$bytes.get_unchecked(pos) };
+                let esc = unsafe { *ESCAPE_TABLE.get_unchecked(byte as usize) };
+                match esc {
+                    b'u' => {
+                        $buf.extend_from_slice(b"\\u00");
+                        let hi = (byte >> 4) & 0xF;
+                        let lo = byte & 0xF;
+                        $buf.push(if hi < 10 { b'0' + hi } else { b'a' + hi - 10 });
+                        $buf.push(if lo < 10 { b'0' + lo } else { b'a' + lo - 10 });
+                    }
+                    c => {
+                        $buf.push(b'\\');
+                        $buf.push(c);
+                    }
+                }
+                $start = pos + 1;
+            }
         }
     }};
 }
@@ -250,6 +276,39 @@ macro_rules! drain_escape_raw {
                 }
             }
             $start = pos + 1;
+
+            // Manual unroll: process second bit if present
+            if m != 0 {
+                let tz = m.trailing_zeros() as usize;
+                m &= m.wrapping_sub(1);
+                let pos = $base + tz;
+                if $start < pos {
+                    let chunk = $bytes.get_unchecked($start..pos);
+                    std::ptr::copy_nonoverlapping(chunk.as_ptr(), $curr, chunk.len());
+                    $curr = $curr.add(chunk.len());
+                }
+                let byte = *$bytes.get_unchecked(pos);
+                let esc = *ESCAPE_TABLE.get_unchecked(byte as usize);
+                match esc {
+                    b'u' => {
+                        std::ptr::copy_nonoverlapping(b"\\u00".as_ptr(), $curr, 4);
+                        $curr = $curr.add(4);
+                        let hi = (byte >> 4) & 0xF;
+                        let lo = byte & 0xF;
+                        *$curr = if hi < 10 { b'0' + hi } else { b'a' + hi - 10 };
+                        $curr = $curr.add(1);
+                        *$curr = if lo < 10 { b'0' + lo } else { b'a' + lo - 10 };
+                        $curr = $curr.add(1);
+                    }
+                    c => {
+                        *$curr = b'\\';
+                        $curr = $curr.add(1);
+                        *$curr = c;
+                        $curr = $curr.add(1);
+                    }
+                }
+                $start = pos + 1;
+            }
         }
     }};
 }
@@ -326,34 +385,44 @@ pub fn write_str_escape(buf: &mut Vec<u8>, bytes: &[u8]) {
         }
     }
 
-    // Scalar tail
-    while i < len {
-        let b = unsafe { *bytes.get_unchecked(i) };
-        let esc = unsafe { *ESCAPE_TABLE.get_unchecked(b as usize) };
-        if esc != 0 {
-            if start < i {
-                buf.extend_from_slice(unsafe { bytes.get_unchecked(start..i) });
-            }
-            match esc {
-                b'u' => {
-                    buf.extend_from_slice(b"\\u00");
-                    let hi = (b >> 4) & 0xF;
-                    let lo = b & 0xF;
-                    buf.push(if hi < 10 { b'0' + hi } else { b'a' + hi - 10 });
-                    buf.push(if lo < 10 { b'0' + lo } else { b'a' + lo - 10 });
+    #[cold]
+    fn scalar_tail(buf: &mut Vec<u8>, bytes: &[u8], mut i: usize, mut start: usize) {
+        let len = bytes.len();
+        while i < len {
+            let b = unsafe { *bytes.get_unchecked(i) };
+            let esc = unsafe { *ESCAPE_TABLE.get_unchecked(b as usize) };
+            if esc != 0 {
+                if start < i {
+                    buf.extend_from_slice(unsafe { bytes.get_unchecked(start..i) });
                 }
-                c => {
-                    buf.push(b'\\');
-                    buf.push(c);
+                match esc {
+                    b'u' => {
+                        buf.extend_from_slice(b"\\u00");
+                        let hi = (b >> 4) & 0xF;
+                        let lo = b & 0xF;
+                        buf.push(if hi < 10 { b'0' + hi } else { b'a' + hi - 10 });
+                        buf.push(if lo < 10 { b'0' + lo } else { b'a' + lo - 10 });
+                    }
+                    c => {
+                        buf.push(b'\\');
+                        buf.push(c);
+                    }
                 }
+                start = i + 1;
             }
-            start = i + 1;
+            i += 1;
         }
-        i += 1;
+        if start < len {
+            buf.extend_from_slice(unsafe { bytes.get_unchecked(start..len) });
+        }
     }
 
-    if start < len {
-        buf.extend_from_slice(unsafe { bytes.get_unchecked(start..len) });
+    if i < len {
+        scalar_tail(buf, bytes, i, start);
+    } else {
+        if start < len {
+            buf.extend_from_slice(unsafe { bytes.get_unchecked(start..len) });
+        }
     }
     buf.push(b'"');
 }
@@ -425,42 +494,62 @@ pub unsafe fn write_str_escape_raw(mut curr: *mut u8, bytes: &[u8]) -> *mut u8 {
         }
     }
 
-    while i < len {
-        let b = *bytes.get_unchecked(i);
-        let esc = *ESCAPE_TABLE.get_unchecked(b as usize);
-        if esc != 0 {
-            if start < i {
-                let chunk = bytes.get_unchecked(start..i);
-                std::ptr::copy_nonoverlapping(chunk.as_ptr(), curr, chunk.len());
-                curr = curr.add(chunk.len());
-            }
-            match esc {
-                b'u' => {
-                    std::ptr::copy_nonoverlapping(b"\\u00".as_ptr(), curr, 4);
-                    curr = curr.add(4);
-                    let hi = (b >> 4) & 0xF;
-                    let lo = b & 0xF;
-                    *curr = if hi < 10 { b'0' + hi } else { b'a' + hi - 10 };
-                    curr = curr.add(1);
-                    *curr = if lo < 10 { b'0' + lo } else { b'a' + lo - 10 };
-                    curr = curr.add(1);
+    #[cold]
+    unsafe fn scalar_tail_raw(
+        mut curr: *mut u8,
+        bytes: &[u8],
+        mut i: usize,
+        mut start: usize,
+    ) -> *mut u8 {
+        let len = bytes.len();
+        while i < len {
+            let b = *bytes.get_unchecked(i);
+            let esc = *ESCAPE_TABLE.get_unchecked(b as usize);
+            if esc != 0 {
+                if start < i {
+                    let chunk = bytes.get_unchecked(start..i);
+                    std::ptr::copy_nonoverlapping(chunk.as_ptr(), curr, chunk.len());
+                    curr = curr.add(chunk.len());
                 }
-                c => {
-                    *curr = b'\\';
-                    curr = curr.add(1);
-                    *curr = c;
-                    curr = curr.add(1);
+                match esc {
+                    b'u' => {
+                        std::ptr::copy_nonoverlapping(b"\\u00".as_ptr(), curr, 4);
+                        curr = curr.add(4);
+                        let hi = (b >> 4) & 0xF;
+                        let lo = b & 0xF;
+                        *curr = if hi < 10 { b'0' + hi } else { b'a' + hi - 10 };
+                        curr = curr.add(1);
+                        *curr = if lo < 10 { b'0' + lo } else { b'a' + lo - 10 };
+                        curr = curr.add(1);
+                    }
+                    c => {
+                        *curr = b'\\';
+                        curr = curr.add(1);
+                        *curr = c;
+                        curr = curr.add(1);
+                    }
                 }
+                start = i + 1;
             }
-            start = i + 1;
+            i += 1;
         }
-        i += 1;
+
+        if start < len {
+            let chunk = bytes.get_unchecked(start..len);
+            std::ptr::copy_nonoverlapping(chunk.as_ptr(), curr, chunk.len());
+            curr = curr.add(chunk.len());
+        }
+        curr
     }
 
-    if start < len {
-        let chunk = bytes.get_unchecked(start..len);
-        std::ptr::copy_nonoverlapping(chunk.as_ptr(), curr, chunk.len());
-        curr = curr.add(chunk.len());
+    if i < len {
+        curr = scalar_tail_raw(curr, bytes, i, start);
+    } else {
+        if start < len {
+            let chunk = bytes.get_unchecked(start..len);
+            std::ptr::copy_nonoverlapping(chunk.as_ptr(), curr, chunk.len());
+            curr = curr.add(chunk.len());
+        }
     }
 
     *curr = b'"';

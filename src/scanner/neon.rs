@@ -104,6 +104,7 @@ macro_rules! struct_or {
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
 pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
+    use crate::scanner::tag_byte;
     let mut tape_idx = 0;
     let mut i = 0;
     let mut prev_in_string: u64 = 0;
@@ -159,13 +160,15 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
         while active1 != 0 {
             let tz = active1.trailing_zeros();
             active1 &= active1 - 1;
-            *tape.get_unchecked_mut(tape_idx) = i as u32 + tz;
+            let pos = i + tz as usize;
+            *tape.get_unchecked_mut(tape_idx) = tag_byte(*bytes.get_unchecked(pos), pos);
             tape_idx += 1;
         }
         while active2 != 0 {
             let tz = active2.trailing_zeros();
             active2 &= active2 - 1;
-            *tape.get_unchecked_mut(tape_idx) = i as u32 + 32 + tz;
+            let pos = i + 32 + tz as usize;
+            *tape.get_unchecked_mut(tape_idx) = tag_byte(*bytes.get_unchecked(pos), pos);
             tape_idx += 1;
         }
 
@@ -195,7 +198,8 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
         while active != 0 {
             let tz = active.trailing_zeros();
             active &= active - 1;
-            *tape.get_unchecked_mut(tape_idx) = i as u32 + tz;
+            let pos = i + tz as usize;
+            *tape.get_unchecked_mut(tape_idx) = tag_byte(*bytes.get_unchecked(pos), pos);
             tape_idx += 1;
         }
 
@@ -219,14 +223,14 @@ pub unsafe fn scan_neon(bytes: &[u8], tape: &mut [u32]) -> usize {
                 escape = true;
             } else if b == b'"' {
                 if tape_idx < tape.len() {
-                    *tape.get_unchecked_mut(tape_idx) = i as u32;
+                    *tape.get_unchecked_mut(tape_idx) = tag_byte(b, i);
                     tape_idx += 1;
                 }
                 in_string = !in_string;
             } else if !in_string {
                 match b {
                     b'{' | b'}' | b'[' | b']' | b':' | b',' if tape_idx < tape.len() => {
-                        *tape.get_unchecked_mut(tape_idx) = i as u32;
+                        *tape.get_unchecked_mut(tape_idx) = tag_byte(b, i);
                         tape_idx += 1;
                     }
                     _ => {}
