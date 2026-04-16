@@ -625,6 +625,129 @@ fn gen_named_struct_deser(
 }
 
 // ---------------------------------------------------------------------------
+// Enum deserialization
+// ---------------------------------------------------------------------------
+fn gen_enum_deser(name: &syn::Ident, data: &DataEnum) -> proc_macro2::TokenStream {
+    let mut match_arms = Vec::new();
+    for variant in data.variants.iter() {
+        let vident = &variant.ident;
+        let variant_name = vident.to_string();
+        match &variant.fields {
+            Fields::Unit => {
+                match_arms.push(quote! {
+                    #variant_name => Ok(#name::#vident),
+                });
+            }
+            Fields::Unnamed(fu) if fu.unnamed.len() == 1 => {
+                match_arms.push(quote! {
+                    #variant_name => {
+                        _parser.expect_colon()?;
+                        let inner = <_ as kowito_json::Deserialize>::deserialize(_parser)?;
+                        Ok(#name::#vident(inner))
+                    },
+                });
+            }
+            Fields::Unnamed(fu) => {
+                let len = fu.unnamed.len();
+                let indices: Vec<_> = (0..len).map(|i| syn::Ident::new(&format!("_f{i}"), proc_macro2::Span::call_site())).collect();
+                let field_tys: Vec<_> = fu.unnamed.iter().map(|f| &f.ty).collect();
+                // Each element must call array_next() after deserializing to consume ',' or ']'
+                let deser_pairs: Vec<_> = indices.iter().zip(field_tys.iter()).map(|(id, ty)| {
+                    quote! {
+                        let #id = <#ty as kowito_json::Deserialize>::deserialize(_parser)?;
+                        _parser.array_next()?;
+                    }
+                }).collect();
+                match_arms.push(quote! {
+                    #variant_name => {
+                        _parser.expect_colon()?;
+                        _parser.begin_array()?;
+                        #( #deser_pairs )*
+                        Ok(#name::#vident(#( #indices ),*))
+                    },
+                });
+            }
+            Fields::Named(fn_) => {
+                // For struct variants, manually deserialize each field and construct the variant
+                let field_idents: Vec<_> = fn_.named.iter()
+                    .map(|f| f.ident.as_ref().unwrap())
+                    .collect();
+                let field_tys: Vec<_> = fn_.named.iter()
+                    .map(|f| &f.ty)
+                    .collect();
+                let field_strs: Vec<String> = field_idents.iter()
+                    .map(|id| id.to_string())
+                    .collect();
+                let opt_idents: Vec<_> = field_idents.iter()
+                    .map(|id| syn::Ident::new(&format!("_vf_{id}"), proc_macro2::Span::call_site()))
+                    .collect();
+                match_arms.push(quote! {
+                    #variant_name => {
+                        _parser.expect_colon()?;
+                        _parser.begin_object()?;
+                        #( let mut #opt_idents: Option<#field_tys> = None; )*
+                        // Check for empty object
+                        if _parser.tape.get(_parser.pos).map(|t| t & 0xF000_0000) != Some(3 << 28) {
+                            loop {
+                                let _key = _parser.parse_string_owned()?;
+                                match _key.as_str() {
+                                    #(
+                                        #field_strs => {
+                                            _parser.expect_colon()?;
+                                            #opt_idents = Some(<#field_tys as kowito_json::Deserialize>::deserialize(_parser)?);
+                                        }
+                                    )*
+                                    _ => {
+                                        _parser.expect_colon()?;
+                                        _parser.skip_value()?;
+                                    }
+                                }
+                                if !_parser.object_next()? { break; }
+                            }
+                        } else {
+                            _parser.pos += 1;
+                        }
+                        Ok(#name::#vident { #( #field_idents: #opt_idents.unwrap_or_default() ),* })
+                    },
+                });
+            }
+        }
+    }
+    // Collect unit variant names for the plain-string form (unit variants serialize as "Name")
+    let unit_match_arms: Vec<_> = data.variants.iter().filter_map(|v| {
+        if matches!(v.fields, Fields::Unit) {
+            let vident = &v.ident;
+            let vname = vident.to_string();
+            Some(quote! { #vname => Ok(#name::#vident), })
+        } else {
+            None
+        }
+    }).collect();
+
+    quote! {
+        impl kowito_json::Deserialize for #name {
+            fn deserialize(_parser: &mut kowito_json::Parser<'_>) -> kowito_json::Result<Self> {
+                // Unit variants are serialized as plain strings; others as {"Variant": ...}
+                if _parser.peek_is_string() {
+                    let key = _parser.parse_string_owned()?;
+                    match key.as_str() {
+                        #( #unit_match_arms )*
+                        _ => Err(kowito_json::Error::custom("unknown unit enum variant")),
+                    }
+                } else {
+                    _parser.begin_object()?;
+                    let key = _parser.parse_string_owned()?;
+                    match key.as_str() {
+                        #( #match_arms )*
+                        _ => Err(kowito_json::Error::custom("unknown enum variant")),
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -649,7 +772,11 @@ pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
         Data::Struct(DataStruct { fields: Fields::Unit, .. }) => {
             gen_unit_struct(name)
         }
-        Data::Enum(de) => gen_enum(name, de),
+        Data::Enum(de) => {
+            let ser = gen_enum(name, de);
+            let deser = gen_enum_deser(name, de);
+            quote! { #ser #deser }
+        }
         Data::Union(_) => {
             return syn::Error::new_spanned(name, "KJson does not support unions")
                 .to_compile_error()

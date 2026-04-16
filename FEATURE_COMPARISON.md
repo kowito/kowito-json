@@ -32,22 +32,22 @@ Legend: ✅ Supported · ❌ Not supported · ⚠️ Partial · 🚧 Planned
 
 | Feature | kowito-json | serde_json | Notes |
 |:---|:---:|:---:|:---|
-| Struct deserialization | ⚠️ | ✅ | kowito: `from_kview()` derive only; no field rename/skip |
-| Enum deserialization | ❌ | ✅ | |
-| HashMap / BTreeMap | ❌ | ✅ | |
+| Struct deserialization | ✅ | ✅ | `#[derive(KJson)]` now generates `Deserialize` impl; supports field rename/skip |
+| Enum deserialization | ✅ | ✅ | all 4 variant kinds: unit / newtype / tuple / struct; unit variants handle plain-string form |
+| HashMap / BTreeMap | ✅ | ✅ | |
 | `serde::Deserialize` ecosystem compatibility | ❌ | ✅ | |
 | Zero-decode / lazy field access | ✅ | ❌ | kowito scans to tape without decoding values |
-| Full-document `Value` type | ❌ | ✅ | serde: `serde_json::Value`; kowito: no equivalent |
+| Full-document `Value` type | ✅ | ✅ | `kowito_json::Value` (Null/Bool/Number/Str/Array/Object) |
 | Structural tape (u32 token stream) | ✅ | ❌ | kowito: flat `Vec<u32>` tape |
 | SIMD structural scanning | ✅ | ❌ | kowito: PMULL / AVX2+PCLMULQDQ |
 | Arena / zero-allocation parse | ✅ | ❌ | kowito: `Scratchpad` + `with_scratch_tape` |
 | Random-access field lookup (KView) | ⚠️ | ❌ | `KView` API exists but is early-stage |
 | Number lazily decoded from raw bytes | ✅ | ❌ | kowito: `KNode::Number(&[u8])` |
 | String lazily decoded (`KString`) | ✅ | ❌ | kowito: zero-copy, decode only on access |
-| UTF-8 validation | ⚠️ | ✅ | kowito assumes valid UTF-8 input |
-| Detailed error messages (line / column) | ❌ | ✅ | |
+| UTF-8 validation | ✅ | ✅ | `from_slice` validates; `from_str` assumes valid |
+| Detailed error messages (line / column) | ✅ | ✅ | `Error::Parse { msg, line, col }` |
 | Streaming / incremental parse | ❌ | ✅ | |
-| `from_str` / `from_slice` convenience API | ❌ | ✅ | kowito requires `Scanner` + `KView` manually |
+| `from_str` / `from_slice` convenience API | ✅ | ✅ | `kowito_json::from_str` / `from_slice` now available |
 
 ---
 
@@ -102,7 +102,7 @@ Legend: ✅ Supported · ❌ Not supported · ⚠️ Partial · 🚧 Planned
 |:---|:---|
 | Maximum throughput, known schema, nightly Rust | **kowito-json** |
 | Arbitrary / dynamic JSON documents | serde_json |
-| Enum variants in JSON payload | serde_json |
+| Enum variants in JSON payload | **kowito-json** |
 | Stable Rust / `no_std` targets | serde_json |
 | Serde ecosystem interop (`#[serde(...)]` attrs) | serde_json |
 | Microservice hot-path with fixed struct schema | **kowito-json** |

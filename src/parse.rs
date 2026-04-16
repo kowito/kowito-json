@@ -17,6 +17,7 @@
 use crate::error::{Error, Result};
 use crate::scanner::{Scanner, OFFSET_MASK, TOKEN_COLON, TOKEN_LBRACE, TOKEN_LBRACKET, TOKEN_QUOTE, TOKEN_RBRACE, TOKEN_RBRACKET};
 use crate::string::KString;
+use std::collections::{BTreeMap, HashMap};
 
 // ---------------------------------------------------------------------------
 // Deserialize trait
@@ -76,11 +77,15 @@ impl<'a> Parser<'a> {
                 self.pos += 1;
                 Ok(off)
             }
-            _ => Err(Error::custom(format!(
-                "expected {label} at tape[{}], got {:?}",
-                self.pos,
-                self.tape.get(self.pos)
-            ))),
+            other => {
+                let byte_off = other.map(|&t| (t & OFFSET_MASK) as usize).unwrap_or(self.src.len());
+                let (line, col) = crate::parse::byte_offset_to_line_col(self.src, byte_off);
+                Err(Error::parse_at(
+                    format!("expected {label}, got {:?}", other.map(|t| t & !OFFSET_MASK)),
+                    line,
+                    col,
+                ))
+            }
         }
     }
 
@@ -123,7 +128,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Return the byte offset where the next value starts (after structural separator).
-    fn current_value_start(&self) -> Result<usize> {
+    pub fn current_value_start(&self) -> Result<usize> {
         // The value is immediately after the most recently consumed token.
         // We track this by looking backwards in the tape for the last consumed entry.
         if self.pos == 0 {
@@ -147,6 +152,11 @@ impl<'a> Parser<'a> {
             i += 1;
         }
         i
+    }
+
+    /// Public accessor for `scan_number_end` (used by `Value` deserializer).
+    pub fn scan_number_end_pub(&self, start: usize) -> usize {
+        self.scan_number_end(start)
     }
 
     // --- Value-level parsing ---
@@ -448,17 +458,79 @@ impl<T: Deserialize> Deserialize for Vec<T> {
     }
 }
 
+impl<V: Deserialize> Deserialize for HashMap<String, V> {
+    fn deserialize(parser: &mut Parser<'_>) -> Result<Self> {
+        parser.begin_object()?;
+        let mut map = HashMap::new();
+        // Empty object check
+        if parser.tape.get(parser.pos).map(|t| t & !OFFSET_MASK) == Some(TOKEN_RBRACE) {
+            parser.pos += 1;
+            return Ok(map);
+        }
+        loop {
+            let key = parser.parse_string_owned()?;
+            parser.expect_colon()?;
+            let val = V::deserialize(parser)?;
+            map.insert(key, val);
+            if !parser.object_next()? {
+                break;
+            }
+        }
+        Ok(map)
+    }
+}
+
+impl<V: Deserialize> Deserialize for BTreeMap<String, V> {
+    fn deserialize(parser: &mut Parser<'_>) -> Result<Self> {
+        parser.begin_object()?;
+        let mut map = BTreeMap::new();
+        if parser.tape.get(parser.pos).map(|t| t & !OFFSET_MASK) == Some(TOKEN_RBRACE) {
+            parser.pos += 1;
+            return Ok(map);
+        }
+        loop {
+            let key = parser.parse_string_owned()?;
+            parser.expect_colon()?;
+            let val = V::deserialize(parser)?;
+            map.insert(key, val);
+            if !parser.object_next()? {
+                break;
+            }
+        }
+        Ok(map)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Line/column helper
+// ---------------------------------------------------------------------------
+
+/// Convert a byte offset in `src` to a (1-based line, 1-based column) pair.
+pub fn byte_offset_to_line_col(src: &[u8], offset: usize) -> (usize, usize) {
+    let safe = offset.min(src.len());
+    let line = src[..safe].iter().filter(|&&b| b == b'\n').count() + 1;
+    let col = match src[..safe].iter().rposition(|&b| b == b'\n') {
+        Some(nl) => safe - nl,
+        None => safe + 1,
+    };
+    (line, col)
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
 /// Deserialize a type from a JSON byte slice.
 pub fn from_slice<T: Deserialize>(src: &[u8]) -> Result<T> {
+    // Validate UTF-8 at the boundary before parsing.
+    std::str::from_utf8(src).map_err(|e| Error::custom(format!("invalid UTF-8: {e}")))?;
     let mut parser = Parser::new(src);
     T::deserialize(&mut parser)
 }
 
 /// Deserialize a type from a JSON string.
 pub fn from_str<T: Deserialize>(s: &str) -> Result<T> {
-    from_slice(s.as_bytes())
+    // str is already valid UTF-8; skip the check.
+    let mut parser = Parser::new(s.as_bytes());
+    T::deserialize(&mut parser)
 }

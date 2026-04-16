@@ -7,6 +7,7 @@ pub mod scanner;
 pub mod serde_ser;
 pub mod serialize;
 pub mod string;
+pub mod value;
 pub mod view;
 
 pub use arena::Scratchpad;
@@ -16,6 +17,7 @@ pub use serde_ser::{
     to_string, to_string_pretty, to_vec, to_vec_pretty, to_writer, to_writer_pretty,
 };
 pub use string::KString;
+pub use value::Value;
 pub use view::KView;
 
 pub use kowito_json_derive::KJson;

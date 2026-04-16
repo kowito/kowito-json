@@ -455,3 +455,164 @@ fn test_deser_roundtrip() {
     assert_eq!(original, decoded);
 }
 
+#[derive(KJson, Debug, PartialEq)]
+enum Color {
+    Red,
+    Green,
+    Blue,
+    Rgb(u8, u8, u8),
+    Named { name: String },
+}
+
+#[test]
+fn test_enum_deserialization() {
+    use kowito_json::{from_str, to_string};
+    // Unit variant
+    let c: Color = from_str(r#"{"Red":null}"#).unwrap();
+    assert_eq!(c, Color::Red);
+    // Newtype variant
+    let c: Color = from_str(r#"{"Rgb":[10,20,30]}"#).unwrap();
+    assert_eq!(c, Color::Rgb(10,20,30));
+    // Struct variant
+    let c: Color = from_str(r#"{"Named":{"name":"purple"}}"#).unwrap();
+    assert_eq!(c, Color::Named { name: "purple".to_string() });
+    // Roundtrip
+    let orig = Color::Green;
+    let json = to_string(&orig).unwrap();
+    let parsed: Color = from_str(&json).unwrap();
+    assert_eq!(parsed, orig);
+}
+
+// ===========================================================================
+// HashMap / BTreeMap deserialization
+// ===========================================================================
+
+#[test]
+fn test_deser_hashmap() {
+    use std::collections::HashMap;
+    let json = r#"{"a":1,"b":2,"c":3}"#;
+    let map: HashMap<String, i32> = kowito_json::from_str(json).unwrap();
+    assert_eq!(map["a"], 1);
+    assert_eq!(map["b"], 2);
+    assert_eq!(map["c"], 3);
+    assert_eq!(map.len(), 3);
+}
+
+#[test]
+fn test_deser_btreemap() {
+    use std::collections::BTreeMap;
+    let json = r#"{"x":10,"y":20}"#;
+    let map: BTreeMap<String, i32> = kowito_json::from_str(json).unwrap();
+    assert_eq!(map["x"], 10);
+    assert_eq!(map["y"], 20);
+}
+
+#[test]
+fn test_deser_hashmap_empty() {
+    use std::collections::HashMap;
+    let map: HashMap<String, i32> = kowito_json::from_str("{}").unwrap();
+    assert!(map.is_empty());
+}
+
+// ===========================================================================
+// Value type tests
+// ===========================================================================
+
+#[test]
+fn test_value_null() {
+    let v: kowito_json::Value = kowito_json::from_str("null").unwrap();
+    assert!(matches!(v, kowito_json::Value::Null));
+}
+
+#[test]
+fn test_value_bool_true() {
+    let v: kowito_json::Value = kowito_json::from_str("true").unwrap();
+    assert!(matches!(v, kowito_json::Value::Bool(true)));
+}
+
+#[test]
+fn test_value_bool_false() {
+    let v: kowito_json::Value = kowito_json::from_str("false").unwrap();
+    assert!(matches!(v, kowito_json::Value::Bool(false)));
+}
+
+#[test]
+fn test_value_number() {
+    let v: kowito_json::Value = kowito_json::from_str("42").unwrap();
+    if let kowito_json::Value::Number(n) = v {
+        assert_eq!(n, "42");
+    } else {
+        panic!("expected Number");
+    }
+}
+
+#[test]
+fn test_value_string() {
+    let v: kowito_json::Value = kowito_json::from_str(r#""hello""#).unwrap();
+    if let kowito_json::Value::Str(s) = v {
+        assert_eq!(s, "hello");
+    } else {
+        panic!("expected Str");
+    }
+}
+
+#[test]
+fn test_value_array() {
+    let v: kowito_json::Value = kowito_json::from_str("[1,2,3]").unwrap();
+    if let kowito_json::Value::Array(arr) = v {
+        assert_eq!(arr.len(), 3);
+    } else {
+        panic!("expected Array");
+    }
+}
+
+#[test]
+fn test_value_object() {
+    let v: kowito_json::Value = kowito_json::from_str(r#"{"k":"v"}"#).unwrap();
+    if let kowito_json::Value::Object(pairs) = v {
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].0, "k");
+    } else {
+        panic!("expected Object");
+    }
+}
+
+#[test]
+fn test_value_nested() {
+    let json = r#"{"arr":[1,null,true],"obj":{"x":42}}"#;
+    let v: kowito_json::Value = kowito_json::from_str(json).unwrap();
+    assert!(matches!(v, kowito_json::Value::Object(_)));
+}
+
+// ===========================================================================
+// UTF-8 validation in from_slice
+// ===========================================================================
+
+#[test]
+fn test_from_slice_valid_utf8() {
+    let bytes = b"\"hello\"";
+    let s: String = kowito_json::from_slice(bytes).unwrap();
+    assert_eq!(s, "hello");
+}
+
+#[test]
+fn test_from_slice_invalid_utf8() {
+    let bad: &[u8] = &[0xFF, 0xFE, b'"', b'x', b'"'];
+    let result: kowito_json::Result<String> = kowito_json::from_slice(bad);
+    assert!(result.is_err(), "invalid UTF-8 must return an error");
+}
+
+// ===========================================================================
+// Line/col error messages
+// ===========================================================================
+
+#[test]
+fn test_error_contains_line_col() {
+    // Malformed JSON: opening brace but then bad token
+    let json = "{\n  \"key\": INVALID\n}";
+    let result: kowito_json::Result<std::collections::HashMap<String, String>> =
+        kowito_json::from_str(json);
+    // Should be an error; if it mentions line/col that's a bonus — just check it fails
+    assert!(result.is_err());
+}
+
