@@ -112,6 +112,58 @@ unsafe fn escape_mask_neon_x64(ptr: *const u8) -> u64 {
     bulk_movemask_4x16(m0, m1, m2, m3)
 }
 
+/// Combined 64-byte scan + store for the clean-string fast path.
+///
+/// Loads 4×16 bytes, computes the escape mask exactly as `escape_mask_neon_x64`.
+/// - If mask == 0 (no escapes): stores all 64 bytes from the already-loaded
+///   registers directly to `dst` via `vst1q_u8`, then returns `(0, dst+64)`.
+/// - If mask != 0: returns `(mask, dst)` **without** writing anything —
+///   the caller handles per-byte escaping.
+///
+/// This eliminates the second read of `src` for the all-safe-char hot path:
+/// the data is stored straight from the NEON registers that were already loaded
+/// for the mask computation, enabling the CPU to pipeline loads and stores
+/// across loop iterations.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn neon_scan_copy_x64(src: *const u8, dst: *mut u8) -> (u64, *mut u8) {
+    // Prefetch the chunk two iterations ahead (128 bytes) to keep L1 warm.
+    core::arch::asm!(
+        "prfm pldl1keep, [{0}]",
+        in(reg) src.add(128),
+        options(nostack, readonly, preserves_flags)
+    );
+
+    let v0 = vld1q_u8(src);
+    let v1 = vld1q_u8(src.add(16));
+    let v2 = vld1q_u8(src.add(32));
+    let v3 = vld1q_u8(src.add(48));
+    let quote  = vdupq_n_u8(b'"');
+    let bslash = vdupq_n_u8(b'\\');
+    let ctrl   = vdupq_n_u8(0x20);
+    let m0 = vorrq_u8(vorrq_u8(vceqq_u8(v0, quote), vceqq_u8(v0, bslash)), vcltq_u8(v0, ctrl));
+    let m1 = vorrq_u8(vorrq_u8(vceqq_u8(v1, quote), vceqq_u8(v1, bslash)), vcltq_u8(v1, ctrl));
+    let m2 = vorrq_u8(vorrq_u8(vceqq_u8(v2, quote), vceqq_u8(v2, bslash)), vcltq_u8(v2, ctrl));
+    let m3 = vorrq_u8(vorrq_u8(vceqq_u8(v3, quote), vceqq_u8(v3, bslash)), vcltq_u8(v3, ctrl));
+    // Fast zero-check via horizontal max: OR all four masks into one register,
+    // then check if any byte is non-zero. vmaxvq_u8 is a single NEON instruction
+    // (UMAXV), far cheaper than the full bitmask path (VAND×4 + VPADDQ×3 + VGETQ).
+    let any = vorrq_u8(vorrq_u8(m0, m1), vorrq_u8(m2, m3));
+    if vmaxvq_u8(any) == 0 {
+        // No escapes — store the 4 already-loaded vectors straight to output.
+        vst1q_u8(dst,        v0);
+        vst1q_u8(dst.add(16), v1);
+        vst1q_u8(dst.add(32), v2);
+        vst1q_u8(dst.add(48), v3);
+        (0, dst.add(64))
+    } else {
+        // Escape case (rare): compute the full 64-bit bitmask so the caller can
+        // process individual bytes. m0..m3 are still in registers.
+        let mask = bulk_movemask_4x16(m0, m1, m2, m3);
+        (mask, dst)
+    }
+}
+
 /// 32-byte escape mask.
 #[cfg(target_arch = "aarch64")]
 #[inline(always)]
@@ -162,6 +214,33 @@ unsafe fn escape_mask_avx2_x2(ptr: *const u8) -> u64 {
         _mm256_or_si256(_mm256_cmpeq_epi8(d1, b), _mm256_cmpgt_epi8(c, d1)),
     );
     (_mm256_movemask_epi8(m0) as u32 as u64) | ((_mm256_movemask_epi8(m1) as u32 as u64) << 32)
+}
+
+/// Combined 64-byte scan + store for the clean-string fast path (AVX2).
+///
+/// Same logic as `escape_mask_avx2_x2` but also stores when mask == 0.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn avx2_scan_copy_x64(src: *const u8, dst: *mut u8) -> (u64, *mut u8) {
+    use core::arch::x86_64::*;
+    let d0 = _mm256_loadu_si256(src as *const __m256i);
+    let d1 = _mm256_loadu_si256(src.add(32) as *const __m256i);
+    let q = _mm256_set1_epi8(b'"' as i8);
+    let b = _mm256_set1_epi8(b'\\' as i8);
+    let c = _mm256_set1_epi8(0x20);
+    let m0 = _mm256_or_si256(_mm256_cmpeq_epi8(d0, q),
+        _mm256_or_si256(_mm256_cmpeq_epi8(d0, b), _mm256_cmpgt_epi8(c, d0)));
+    let m1 = _mm256_or_si256(_mm256_cmpeq_epi8(d1, q),
+        _mm256_or_si256(_mm256_cmpeq_epi8(d1, b), _mm256_cmpgt_epi8(c, d1)));
+    let mask = (_mm256_movemask_epi8(m0) as u32 as u64)
+        | ((_mm256_movemask_epi8(m1) as u32 as u64) << 32);
+    if mask == 0 {
+        _mm256_storeu_si256(dst as *mut __m256i, d0);
+        _mm256_storeu_si256(dst.add(32) as *mut __m256i, d1);
+        (0, dst.add(64))
+    } else {
+        (mask, dst)
+    }
 }
 
 /// 32-byte escape mask (single AVX2 register).
@@ -333,8 +412,14 @@ pub fn write_str_escape(buf: &mut Vec<u8>, bytes: &[u8]) {
     #[cfg(target_arch = "aarch64")]
     {
         while i + 64 <= len {
+            if start < i {
+                buf.extend_from_slice(unsafe { bytes.get_unchecked(start..i) });
+                start = i;
+            }
             let mask = unsafe { escape_mask_neon_x64(bytes.as_ptr().add(i)) };
             if mask == 0 {
+                buf.extend_from_slice(unsafe { bytes.get_unchecked(i..i + 64) });
+                start = i + 64;
                 i += 64;
                 continue;
             }
@@ -342,8 +427,14 @@ pub fn write_str_escape(buf: &mut Vec<u8>, bytes: &[u8]) {
             i += 64;
         }
         while i + 32 <= len {
+            if start < i {
+                buf.extend_from_slice(unsafe { bytes.get_unchecked(start..i) });
+                start = i;
+            }
             let mask = unsafe { escape_mask_neon_x32(bytes.as_ptr().add(i)) } as u64;
             if mask == 0 {
+                buf.extend_from_slice(unsafe { bytes.get_unchecked(i..i + 32) });
+                start = i + 32;
                 i += 32;
                 continue;
             }
@@ -351,8 +442,14 @@ pub fn write_str_escape(buf: &mut Vec<u8>, bytes: &[u8]) {
             i += 32;
         }
         while i + 16 <= len {
+            if start < i {
+                buf.extend_from_slice(unsafe { bytes.get_unchecked(start..i) });
+                start = i;
+            }
             let mask = unsafe { escape_mask_neon_x16(bytes.as_ptr().add(i)) } as u64;
             if mask == 0 {
+                buf.extend_from_slice(unsafe { bytes.get_unchecked(i..i + 16) });
+                start = i + 16;
                 i += 16;
                 continue;
             }
@@ -365,8 +462,14 @@ pub fn write_str_escape(buf: &mut Vec<u8>, bytes: &[u8]) {
     {
         if is_x86_feature_detected!("avx2") {
             while i + 64 <= len {
+                if start < i {
+                    buf.extend_from_slice(unsafe { bytes.get_unchecked(start..i) });
+                    start = i;
+                }
                 let mask = unsafe { escape_mask_avx2_x2(bytes.as_ptr().add(i)) };
                 if mask == 0 {
+                    buf.extend_from_slice(unsafe { bytes.get_unchecked(i..i + 64) });
+                    start = i + 64;
                     i += 64;
                     continue;
                 }
@@ -374,8 +477,14 @@ pub fn write_str_escape(buf: &mut Vec<u8>, bytes: &[u8]) {
                 i += 64;
             }
             while i + 32 <= len {
+                if start < i {
+                    buf.extend_from_slice(unsafe { bytes.get_unchecked(start..i) });
+                    start = i;
+                }
                 let mask = unsafe { escape_mask_avx2(bytes.as_ptr().add(i)) } as u64;
                 if mask == 0 {
+                    buf.extend_from_slice(unsafe { bytes.get_unchecked(i..i + 32) });
+                    start = i + 32;
                     i += 32;
                     continue;
                 }
@@ -441,9 +550,23 @@ pub unsafe fn write_str_escape_raw(mut curr: *mut u8, bytes: &[u8]) -> *mut u8 {
 
     #[cfg(target_arch = "aarch64")]
     {
+        // 64-byte hot loop: combined scan+store.
+        // neon_scan_copy_x64 loads 4×16 bytes, computes the escape mask, and —
+        // if mask==0 — stores them directly from the already-loaded NEON registers,
+        // eliminating the separate deferred copy_nonoverlapping flush and enabling
+        // the CPU to pipeline stores with the next iteration's loads.
         while i + 64 <= len {
-            let mask = escape_mask_neon_x64(bytes.as_ptr().add(i));
+            // Flush any clean tail from the previous escape chunk so start==i.
+            if start < i {
+                let pending = i - start;
+                std::ptr::copy_nonoverlapping(bytes.as_ptr().add(start), curr, pending);
+                curr = curr.add(pending);
+                start = i;
+            }
+            let (mask, new_curr) = neon_scan_copy_x64(bytes.as_ptr().add(i), curr);
             if mask == 0 {
+                curr = new_curr;
+                start = i + 64;
                 i += 64;
                 continue;
             }
@@ -451,8 +574,17 @@ pub unsafe fn write_str_escape_raw(mut curr: *mut u8, bytes: &[u8]) -> *mut u8 {
             i += 64;
         }
         while i + 32 <= len {
+            if start < i {
+                let pending = i - start;
+                std::ptr::copy_nonoverlapping(bytes.as_ptr().add(start), curr, pending);
+                curr = curr.add(pending);
+                start = i;
+            }
             let mask = escape_mask_neon_x32(bytes.as_ptr().add(i)) as u64;
             if mask == 0 {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr().add(i), curr, 32);
+                curr = curr.add(32);
+                start = i + 32;
                 i += 32;
                 continue;
             }
@@ -460,8 +592,17 @@ pub unsafe fn write_str_escape_raw(mut curr: *mut u8, bytes: &[u8]) -> *mut u8 {
             i += 32;
         }
         while i + 16 <= len {
+            if start < i {
+                let pending = i - start;
+                std::ptr::copy_nonoverlapping(bytes.as_ptr().add(start), curr, pending);
+                curr = curr.add(pending);
+                start = i;
+            }
             let mask = escape_mask_neon_x16(bytes.as_ptr().add(i)) as u64;
             if mask == 0 {
+                std::ptr::copy_nonoverlapping(bytes.as_ptr().add(i), curr, 16);
+                curr = curr.add(16);
+                start = i + 16;
                 i += 16;
                 continue;
             }
@@ -473,9 +614,18 @@ pub unsafe fn write_str_escape_raw(mut curr: *mut u8, bytes: &[u8]) -> *mut u8 {
     #[cfg(target_arch = "x86_64")]
     {
         if is_x86_feature_detected!("avx2") {
+            // 64-byte hot loop: combined scan+store (AVX2).
             while i + 64 <= len {
-                let mask = escape_mask_avx2_x2(bytes.as_ptr().add(i));
+                if start < i {
+                    let pending = i - start;
+                    std::ptr::copy_nonoverlapping(bytes.as_ptr().add(start), curr, pending);
+                    curr = curr.add(pending);
+                    start = i;
+                }
+                let (mask, new_curr) = avx2_scan_copy_x64(bytes.as_ptr().add(i), curr);
                 if mask == 0 {
+                    curr = new_curr;
+                    start = i + 64;
                     i += 64;
                     continue;
                 }
@@ -483,8 +633,17 @@ pub unsafe fn write_str_escape_raw(mut curr: *mut u8, bytes: &[u8]) -> *mut u8 {
                 i += 64;
             }
             while i + 32 <= len {
+                if start < i {
+                    let pending = i - start;
+                    std::ptr::copy_nonoverlapping(bytes.as_ptr().add(start), curr, pending);
+                    curr = curr.add(pending);
+                    start = i;
+                }
                 let mask = escape_mask_avx2(bytes.as_ptr().add(i)) as u64;
                 if mask == 0 {
+                    std::ptr::copy_nonoverlapping(bytes.as_ptr().add(i), curr, 32);
+                    curr = curr.add(32);
+                    start = i + 32;
                     i += 32;
                     continue;
                 }
