@@ -1,4 +1,4 @@
-use kowito_json::KJson;
+use kowito_json::{KJson, json};
 use std::borrow::Cow;
 use std::collections::HashMap;
 
@@ -614,5 +614,134 @@ fn test_error_contains_line_col() {
         kowito_json::from_str(json);
     // Should be an error; if it mentions line/col that's a bonus — just check it fails
     assert!(result.is_err());
+}
+
+// ===========================================================================
+// json! macro tests
+// ===========================================================================
+
+#[test]
+fn test_json_macro_null() {
+    assert_eq!(json!(null), kowito_json::Value::Null);
+}
+
+#[test]
+fn test_json_macro_bool() {
+    assert_eq!(json!(true),  kowito_json::Value::Bool(true));
+    assert_eq!(json!(false), kowito_json::Value::Bool(false));
+}
+
+#[test]
+fn test_json_macro_integer() {
+    assert_eq!(json!(42),  kowito_json::Value::Number("42".to_string()));
+    assert_eq!(json!(0u8), kowito_json::Value::Number("0".to_string()));
+}
+
+#[test]
+fn test_json_macro_float() {
+    assert_eq!(json!(3.14f64), kowito_json::Value::Number("3.14".to_string()));
+}
+
+#[test]
+fn test_json_macro_string() {
+    assert_eq!(json!("hello"), kowito_json::Value::Str("hello".to_string()));
+}
+
+#[test]
+fn test_json_macro_empty_array() {
+    assert_eq!(json!([]), kowito_json::Value::Array(vec![]));
+}
+
+#[test]
+fn test_json_macro_array() {
+    let v = json!([1, "two", null, true]);
+    if let kowito_json::Value::Array(arr) = v {
+        assert_eq!(arr.len(), 4);
+        assert_eq!(arr[0], kowito_json::Value::Number("1".to_string()));
+        assert_eq!(arr[1], kowito_json::Value::Str("two".to_string()));
+        assert_eq!(arr[2], kowito_json::Value::Null);
+        assert_eq!(arr[3], kowito_json::Value::Bool(true));
+    } else {
+        panic!("expected Array");
+    }
+}
+
+#[test]
+fn test_json_macro_nested_array() {
+    let v = json!([[1, 2], [3, 4]]);
+    if let kowito_json::Value::Array(outer) = v {
+        assert_eq!(outer.len(), 2);
+        assert!(matches!(&outer[0], kowito_json::Value::Array(_)));
+    } else {
+        panic!("expected Array");
+    }
+}
+
+#[test]
+fn test_json_macro_empty_object() {
+    assert_eq!(json!({}), kowito_json::Value::Object(vec![]));
+}
+
+#[test]
+fn test_json_macro_object() {
+    let v = json!({ "name": "Alice", "age": 30, "active": true });
+    if let kowito_json::Value::Object(pairs) = &v {
+        assert_eq!(pairs.len(), 3);
+        assert_eq!(pairs[0], ("name".to_string(), kowito_json::Value::Str("Alice".to_string())));
+        assert_eq!(pairs[1], ("age".to_string(),  kowito_json::Value::Number("30".to_string())));
+        assert_eq!(pairs[2], ("active".to_string(), kowito_json::Value::Bool(true)));
+    } else {
+        panic!("expected Object");
+    }
+}
+
+#[test]
+fn test_json_macro_nested_object() {
+    let v = json!({
+        "user": {
+            "id": 1,
+            "tags": ["admin", "user"]
+        },
+        "ok": true
+    });
+    if let kowito_json::Value::Object(pairs) = &v {
+        assert_eq!(pairs.len(), 2);
+        assert!(matches!(&pairs[0].1, kowito_json::Value::Object(_)));
+        assert_eq!(pairs[1].1, kowito_json::Value::Bool(true));
+    } else {
+        panic!("expected Object");
+    }
+}
+
+#[test]
+fn test_json_macro_expression_interpolation() {
+    let name = "Bob".to_string();
+    let age: i32 = 25;
+    let v = json!({ "name": (name.as_str()), "age": (age) });
+    if let kowito_json::Value::Object(pairs) = v {
+        assert_eq!(pairs[0].1, kowito_json::Value::Str("Bob".to_string()));
+        assert_eq!(pairs[1].1, kowito_json::Value::Number("25".to_string()));
+    } else {
+        panic!("expected Object");
+    }
+}
+
+#[test]
+fn test_json_macro_trailing_comma() {
+    // trailing commas must be accepted in both arrays and objects
+    let arr = json!([1, 2, 3,]);
+    assert!(matches!(arr, kowito_json::Value::Array(_)));
+
+    let obj = json!({ "a": 1, "b": 2, });
+    assert!(matches!(obj, kowito_json::Value::Object(_)));
+}
+
+#[test]
+fn test_json_macro_display_roundtrip() {
+    let v = json!({ "x": [1, null, false] });
+    let s = v.to_string();
+    // Display output should be valid JSON parseable back to equal value
+    let back: kowito_json::Value = kowito_json::from_str(&s).unwrap();
+    assert_eq!(v, back);
 }
 

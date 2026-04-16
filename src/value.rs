@@ -138,3 +138,111 @@ impl Deserialize for Value {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// From<T> conversions — used by the `json!` macro fallback arm
+// ---------------------------------------------------------------------------
+
+impl From<bool> for Value {
+    fn from(b: bool) -> Self { Value::Bool(b) }
+}
+
+impl From<&str> for Value {
+    fn from(s: &str) -> Self { Value::Str(s.to_owned()) }
+}
+
+impl From<String> for Value {
+    fn from(s: String) -> Self { Value::Str(s) }
+}
+
+impl From<&String> for Value {
+    fn from(s: &String) -> Self { Value::Str(s.clone()) }
+}
+
+macro_rules! impl_value_from_int {
+    ($($t:ty),*) => {
+        $(impl From<$t> for Value {
+            fn from(n: $t) -> Self { Value::Number(n.to_string()) }
+        })*
+    };
+}
+impl_value_from_int!(i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize);
+
+impl From<f32> for Value {
+    fn from(n: f32) -> Self { Value::Number(n.to_string()) }
+}
+
+impl From<f64> for Value {
+    fn from(n: f64) -> Self { Value::Number(n.to_string()) }
+}
+
+impl<T: Into<Value>> From<Vec<T>> for Value {
+    fn from(v: Vec<T>) -> Self { Value::Array(v.into_iter().map(Into::into).collect()) }
+}
+
+impl<T: Into<Value>> From<Option<T>> for Value {
+    fn from(opt: Option<T>) -> Self {
+        match opt {
+            Some(v) => v.into(),
+            None => Value::Null,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// `json!` macro — construct a `Value` with JSON-like literal syntax.
+//
+// Supports:
+//   json!(null)                          → Value::Null
+//   json!(true) / json!(false)           → Value::Bool
+//   json!(42) / json!(3.14)              → Value::Number
+//   json!("hello")                       → Value::Str
+//   json!([1, "two", null])              → Value::Array
+//   json!({ "key": "value", "n": 1 })   → Value::Object
+//   json!((some_rust_expr))              → Value::from(expr)
+// ---------------------------------------------------------------------------
+
+/// Construct a [`Value`] with JSON-like syntax.
+///
+/// # Examples
+/// ```rust
+/// use kowito_json::{json, Value};
+///
+/// let v = json!({
+///     "name": "Alice",
+///     "age": 30,
+///     "active": true,
+///     "tags": ["admin", "user"],
+///     "score": null
+/// });
+/// assert!(matches!(v, Value::Object(_)));
+/// ```
+#[macro_export]
+macro_rules! json {
+    // ---- atoms ----
+    (null)  => { $crate::Value::Null };
+    (true)  => { $crate::Value::Bool(true) };
+    (false) => { $crate::Value::Bool(false) };
+
+    // ---- empty containers ----
+    ([]) => { $crate::Value::Array(::std::vec![]) };
+    ({}) => { $crate::Value::Object(::std::vec![]) };
+
+    // ---- array ----
+    ([ $($elem:tt),+ $(,)? ]) => {
+        $crate::Value::Array(::std::vec![ $( $crate::json!($elem) ),+ ])
+    };
+
+    // ---- object ----
+    ({ $($key:tt : $val:tt),+ $(,)? }) => {
+        $crate::Value::Object(::std::vec![
+            $( (::std::string::String::from($key), $crate::json!($val)) ),+
+        ])
+    };
+
+    // ---- fallback: any Rust expression ----
+    // Wrap complex expressions in parens: json!((some + expr))
+    ($other:expr) => {
+        $crate::Value::from($other)
+    };
+}

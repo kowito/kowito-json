@@ -78,7 +78,7 @@ Legend: ✅ Supported · ❌ Not supported · ⚠️ Partial · 🚧 Planned
 | Flatten (`#[serde(flatten)]`) | ❌ | ✅ | |
 | Custom deserializer hooks | ❌ | ✅ | |
 | JSON path / pointer | ❌ | ✅ | `serde_json::Value::pointer()` |
-| `json!` macro | ❌ | ✅ | |
+| `json!` macro | ✅ | ✅ | `json!({ "key": value, "arr": [1, 2] })` |
 | Merge / patch JSON | ❌ | ✅ | `json_patch` crate via serde |
 | Crates.io maturity | Early | Stable | serde_json: 600M+ downloads |
 | Documentation coverage | Partial | Extensive | |
