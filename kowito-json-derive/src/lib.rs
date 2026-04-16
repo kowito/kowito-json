@@ -534,6 +534,97 @@ fn gen_enum(name: &syn::Ident, data: &DataEnum) -> proc_macro2::TokenStream {
 }
 
 // ---------------------------------------------------------------------------
+// Deserialize impl generation
+// ---------------------------------------------------------------------------
+
+fn gen_named_struct_deser(
+    name: &syn::Ident,
+    fields_named: &syn::FieldsNamed,
+) -> proc_macro2::TokenStream {
+    let visible_fields: Vec<_> = fields_named
+        .named
+        .iter()
+        .filter(|f| !parse_kjson_attrs(&f.attrs).skip)
+        .collect();
+
+    // For each field, generate:
+    //   let mut _field_x: Option<TypeX> = None;
+    let mut option_decls = Vec::new();
+    // Match arms: "field_name" => { _field_x = Some(...parse...); }
+    let mut match_arms = Vec::new();
+    // Final struct construction: field_x: _field_x.unwrap_or_default()
+    let mut field_inits = Vec::new();
+
+    for field in &visible_fields {
+        let fi = field.ident.as_ref().unwrap();
+        let ty = &field.ty;
+        let attrs = parse_kjson_attrs(&field.attrs);
+        let key = attrs.rename.unwrap_or_else(|| fi.to_string());
+        let opt_ident = syn::Ident::new(&format!("_field_{}", fi), proc_macro2::Span::call_site());
+
+        option_decls.push(quote! {
+            let mut #opt_ident: Option<#ty> = None;
+        });
+
+        match_arms.push(quote! {
+            #key => {
+                _parser.expect_colon()?;
+                #opt_ident = Some(<#ty as kowito_json::Deserialize>::deserialize(_parser)?);
+            }
+        });
+
+        field_inits.push(quote! {
+            #fi: #opt_ident.unwrap_or_default(),
+        });
+    }
+
+    // Also handle skipped fields (default)
+    let skipped_fields: Vec<_> = fields_named
+        .named
+        .iter()
+        .filter(|f| parse_kjson_attrs(&f.attrs).skip)
+        .collect();
+    for field in &skipped_fields {
+        let fi = field.ident.as_ref().unwrap();
+        field_inits.push(quote! { #fi: Default::default(), });
+    }
+
+    quote! {
+        impl kowito_json::Deserialize for #name {
+            fn deserialize(_parser: &mut kowito_json::Parser<'_>) -> kowito_json::Result<Self> {
+                _parser.begin_object()?;
+
+                #( #option_decls )*
+
+                // Check for empty object
+                if let Some(tok) = _parser.tape.get(_parser.pos).map(|t| t & 0xF000_0000) {
+                    if tok == (3 << 28) {
+                        _parser.pos += 1;
+                        return Ok(Self { #( #field_inits )* });
+                    }
+                }
+
+                loop {
+                    let key = _parser.parse_string_owned()?;
+                    match key.as_str() {
+                        #( #match_arms )*
+                        _ => {
+                            _parser.expect_colon()?;
+                            _parser.skip_value()?;
+                        }
+                    }
+                    if !_parser.object_next()? {
+                        break;
+                    }
+                }
+
+                Ok(Self { #( #field_inits )* })
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -544,7 +635,9 @@ pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
 
     let expanded = match &input.data {
         Data::Struct(DataStruct { fields: Fields::Named(fn_), .. }) => {
-            gen_named_struct(name, fn_)
+            let ser = gen_named_struct(name, fn_);
+            let deser = gen_named_struct_deser(name, fn_);
+            quote! { #ser #deser }
         }
         Data::Struct(DataStruct { fields: Fields::Unnamed(fu), .. }) => {
             if fu.unnamed.len() == 1 {

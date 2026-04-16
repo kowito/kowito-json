@@ -380,3 +380,78 @@ fn test_to_writer_pretty() {
     assert_eq!(v[0], 1);
     assert_eq!(v[1], 2);
 }
+
+// ===========================================================================
+// Parsing / Deserialization tests
+// ===========================================================================
+
+#[derive(KJson, Debug, PartialEq, Default)]
+struct DeUser {
+    pub id: u64,
+    pub name: String,
+    pub active: bool,
+    pub score: f64,
+    pub age: Option<u32>,
+}
+
+#[test]
+fn test_deser_basic_struct() {
+    let json = r#"{"id":42,"name":"Alice","active":true,"score":9.5,"age":null}"#;
+    let user: DeUser = kowito_json::from_str(json).unwrap();
+    assert_eq!(user.id, 42);
+    assert_eq!(user.name, "Alice");
+    assert!(user.active);
+    assert!((user.score - 9.5).abs() < 1e-9);
+    assert_eq!(user.age, None);
+}
+
+#[test]
+fn test_deser_optional_field_present() {
+    let json = r#"{"id":1,"name":"Bob","active":false,"score":0.0,"age":30}"#;
+    let user: DeUser = kowito_json::from_str(json).unwrap();
+    assert_eq!(user.age, Some(30));
+}
+
+#[test]
+fn test_deser_unknown_fields_ignored() {
+    let json = r#"{"id":7,"name":"Carol","active":true,"score":1.0,"age":null,"extra":"ignored"}"#;
+    let user: DeUser = kowito_json::from_str(json).unwrap();
+    assert_eq!(user.id, 7);
+    assert_eq!(user.name, "Carol");
+}
+
+#[test]
+fn test_deser_vec_of_primitives() {
+    let nums: Vec<i32> = kowito_json::from_str("[1,2,3,4,5]").unwrap();
+    assert_eq!(nums, vec![1, 2, 3, 4, 5]);
+}
+
+#[test]
+fn test_deser_empty_vec() {
+    let v: Vec<u64> = kowito_json::from_str("[]").unwrap();
+    assert!(v.is_empty());
+}
+
+#[test]
+fn test_deser_string_with_escapes() {
+    let s: String = kowito_json::from_str(r#""hello \"world\"""#).unwrap();
+    assert_eq!(s, r#"hello "world""#);
+}
+
+#[test]
+fn test_deser_roundtrip() {
+    let original = DeUser {
+        id: 99,
+        name: "RoundTrip".to_string(),
+        active: true,
+        score: 3.14,
+        age: Some(25),
+    };
+    let mut buf = Vec::new();
+    original.to_json_bytes(&mut buf);
+    let json = String::from_utf8(buf).unwrap();
+
+    let decoded: DeUser = kowito_json::from_str(&json).unwrap();
+    assert_eq!(original, decoded);
+}
+

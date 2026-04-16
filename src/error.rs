@@ -27,6 +27,13 @@ impl std::error::Error for Error {
     }
 }
 
+impl Error {
+    /// Create a custom error from any displayable message.
+    pub fn custom<T: fmt::Display>(msg: T) -> Self {
+        Error::Custom(msg.to_string())
+    }
+}
+
 impl serde::ser::Error for Error {
     fn custom<T: fmt::Display>(msg: T) -> Self {
         Error::Custom(msg.to_string())
