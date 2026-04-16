@@ -1,8 +1,15 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{Data, DataStruct, DeriveInput, Fields, Type, parse_macro_input};
+use syn::{
+    Data, DataEnum, DataStruct, DeriveInput, Fields, Lit, Meta, Token, Type,
+    parse_macro_input,
+    punctuated::Punctuated,
+};
 
-// A simple compile-time hash function to match the FxHash style
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
 fn field_name_hash(s: &str) -> u64 {
     let mut hash: u64 = 0;
     for &b in s.as_bytes() {
@@ -11,11 +18,6 @@ fn field_name_hash(s: &str) -> u64 {
     hash
 }
 
-/// Returns `true` when the type is a string-like type that needs JSON quotes
-/// provided by `Serialize` (String, &str, str, Cow, KString, …). We detect the
-/// most common ones by their last path segment name. Unknown types that
-/// implement `Serialize` will still work correctly at runtime; this check only
-/// drives compile-time capacity estimates.
 fn is_string_type(ty: &Type) -> bool {
     match ty {
         Type::Path(tp) => {
@@ -30,146 +32,194 @@ fn is_string_type(ty: &Type) -> bool {
     }
 }
 
-/// Rough per-value capacity estimate used for `buf.reserve`.
-/// - strings: 16 bytes (typical short value + quotes)
-/// - numbers/bools: 8 bytes
 fn value_capacity_estimate(ty: &Type) -> usize {
     if is_string_type(ty) { 18 } else { 8 }
 }
 
-#[proc_macro_derive(KJson)]
-pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
-    let input = parse_macro_input!(input as DeriveInput);
-    let name = &input.ident;
+// ---------------------------------------------------------------------------
+// #[kjson(...)] attribute parsing
+// ---------------------------------------------------------------------------
 
-    let mut generated_fields = Vec::new();
-    let mut fields_init = Vec::new();
-    let mut serialize_stmts = Vec::new();
-    let mut dynamic_cap_stmts = Vec::new();
+#[derive(Default)]
+struct KJsonAttrs {
+    rename: Option<String>,
+    skip: bool,
+    skip_serializing_if: Option<syn::Path>,
+}
 
-    // Compile-time capacity: we know every static key prefix byte exactly.
-    // static_cap  = 2 (`{}`) + sum over fields of (comma + `"key":`)
-    // dynamic_cap = rough estimate for values
-    let mut static_cap: usize = 2; // opening `{` + closing `}`
-
-    if let Data::Struct(DataStruct {
-        fields: Fields::Named(fields_named),
-        ..
-    }) = &input.data
-    {
-        let total_fields = fields_named.named.len();
-        for (i, field) in fields_named.named.iter().enumerate() {
-            let field_ident = field.ident.as_ref().unwrap();
-            let field_name_str = field_ident.to_string();
-            let field_hash = field_name_hash(&field_name_str);
-
-            generated_fields.push(quote! {
-                #field_hash => {
-                    // Phase 3: Unrolled SIMD bypass logic specializes here per field type!
-                }
-            });
-
-            fields_init.push(quote! {
-                #field_ident: Default::default()
-            });
-
-            // ----------------------------------------------------------------
-            // Compile-time structural template generation
-            //
-            // Each field contributes a *static* key prefix slice that is
-            // interleaved with the *dynamic* value writes.  All prefix bytes
-            // are known at macro-expansion time so they compile down to a
-            // direct `memcpy` from a read-only data segment.
-            // ----------------------------------------------------------------
-            let prefix = if i == 0 {
-                format!("{{\"{}\":", field_name_str) // opens the object
-            } else {
-                format!(",\"{}\":", field_name_str)
-            };
-
-            // Accumulate static capacity (prefix bytes are known at expand time)
-            static_cap += prefix.len();
-
-            if is_string_type(&field.ty) {
-                dynamic_cap_stmts.push(quote! {
-                    self.#field_ident.len() * 6 + 2
-                });
-            } else {
-                let cap = value_capacity_estimate(&field.ty);
-                dynamic_cap_stmts.push(quote! { #cap });
-            }
-
-            let prefix_bytes =
-                syn::LitByteStr::new(prefix.as_bytes(), proc_macro2::Span::call_site());
-            let is_last = i == total_fields - 1;
-
-            serialize_stmts.push(quote! {
-                {
-                    std::ptr::copy_nonoverlapping(#prefix_bytes.as_ptr(), curr, #prefix_bytes.len());
-                    curr = curr.add(#prefix_bytes.len());
-                    curr = kowito_json::serialize::write_value_raw(&self.#field_ident, curr);
-                    curr
-                }
-            });
-
-            if is_last {
-                serialize_stmts.push(quote! {
-                    {
-                        *curr = b'}';
-                        curr.add(1)
+fn parse_kjson_attrs(attrs: &[syn::Attribute]) -> KJsonAttrs {
+    let mut out = KJsonAttrs::default();
+    for attr in attrs {
+        if !attr.path().is_ident("kjson") {
+            continue;
+        }
+        // Parse #[kjson(key = "value", skip, ...)]
+        let nested = attr
+            .parse_args_with(Punctuated::<Meta, Token![,]>::parse_terminated)
+            .unwrap_or_default();
+        for meta in nested {
+            match &meta {
+                Meta::NameValue(nv) if nv.path.is_ident("rename") => {
+                    if let syn::Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. }) = &nv.value {
+                        out.rename = Some(s.value());
                     }
-                });
+                }
+                Meta::Path(p) if p.is_ident("skip") => {
+                    out.skip = true;
+                }
+                Meta::NameValue(nv) if nv.path.is_ident("skip_serializing_if") => {
+                    if let syn::Expr::Lit(syn::ExprLit { lit: Lit::Str(s), .. }) = &nv.value {
+                        if let Ok(path) = s.parse::<syn::Path>() {
+                            out.skip_serializing_if = Some(path);
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     }
+    out
+}
 
-    let expanded = quote! {
+// ---------------------------------------------------------------------------
+// Named struct serialization (existing schema-JIT fast path, extended)
+// ---------------------------------------------------------------------------
+
+fn gen_named_struct(
+    name: &syn::Ident,
+    fields_named: &syn::FieldsNamed,
+) -> proc_macro2::TokenStream {
+    let mut fields_init = Vec::new();
+    let mut serialize_stmts = Vec::new();
+    let mut dynamic_cap_stmts = Vec::new();
+    let mut serde_field_stmts = Vec::new();
+    let mut static_cap: usize = 2; // `{` + `}`
+
+    // Count non-skipped fields for index tracking
+    let visible_fields: Vec<_> = fields_named
+        .named
+        .iter()
+        .filter(|f| !parse_kjson_attrs(&f.attrs).skip)
+        .collect();
+    let total_visible = visible_fields.len();
+
+    let mut visible_idx = 0usize;
+    for field in &fields_named.named {
+        let field_ident = field.ident.as_ref().unwrap();
+        let attrs = parse_kjson_attrs(&field.attrs);
+
+        fields_init.push(quote! { #field_ident: Default::default() });
+
+        if attrs.skip {
+            continue;
+        }
+
+        let key_owned;
+        let key = if let Some(r) = &attrs.rename {
+            r.as_str()
+        } else {
+            key_owned = field_ident.to_string();
+            key_owned.as_str()
+        };
+        let prefix = if visible_idx == 0 {
+            format!("{{\"{}\":", key)
+        } else {
+            format!(",\"{}\":", key)
+        };
+        static_cap += prefix.len();
+        visible_idx += 1;
+
+        if is_string_type(&field.ty) {
+            dynamic_cap_stmts.push(quote! { self.#field_ident.len() * 6 + 2 });
+        } else {
+            let cap = value_capacity_estimate(&field.ty);
+            dynamic_cap_stmts.push(quote! { #cap });
+        }
+
+        let prefix_bytes =
+            syn::LitByteStr::new(prefix.as_bytes(), proc_macro2::Span::call_site());
+        let is_last = visible_idx == total_visible;
+
+        let inner = if let Some(ref cond_path) = attrs.skip_serializing_if {
+            quote! {
+                if !#cond_path(&self.#field_ident) {
+                    std::ptr::copy_nonoverlapping(#prefix_bytes.as_ptr(), curr, #prefix_bytes.len());
+                    curr = curr.add(#prefix_bytes.len());
+                    curr = kowito_json::serialize::write_value_raw(&self.#field_ident, curr);
+                }
+            }
+        } else {
+            quote! {
+                std::ptr::copy_nonoverlapping(#prefix_bytes.as_ptr(), curr, #prefix_bytes.len());
+                curr = curr.add(#prefix_bytes.len());
+                curr = kowito_json::serialize::write_value_raw(&self.#field_ident, curr);
+            }
+        };
+
+        serialize_stmts.push(inner);
+
+        if is_last {
+            serialize_stmts.push(quote! {
+                *curr = b'}';
+                curr = curr.add(1);
+            });
+        }
+
+        // serde field serialization
+        let key_str = key;
+        if let Some(ref cond_path) = attrs.skip_serializing_if {
+            serde_field_stmts.push(quote! {
+                if #cond_path(&self.#field_ident) {
+                    serde::ser::SerializeStruct::skip_field(&mut _serde_state, #key_str)?;
+                } else {
+                    serde::ser::SerializeStruct::serialize_field(&mut _serde_state, #key_str, &self.#field_ident)?;
+                }
+            });
+        } else {
+            serde_field_stmts.push(quote! {
+                serde::ser::SerializeStruct::serialize_field(&mut _serde_state, #key_str, &self.#field_ident)?;
+            });
+        }
+    }
+
+    // Handle all-skipped edge-case: emit empty object
+    if total_visible == 0 {
+        serialize_stmts.push(quote! {
+            std::ptr::copy_nonoverlapping(b"{}".as_ptr(), curr, 2);
+            curr = curr.add(2);
+        });
+    }
+
+    let _field_hash_arms: Vec<_> = fields_named.named.iter().map(|f| {
+        let fi = f.ident.as_ref().unwrap();
+        let hash = field_name_hash(&fi.to_string());
+        quote! { #hash => {} }
+    }).collect();
+
+    quote! {
         impl #name {
             #[inline(always)]
             pub fn kowito_json_schema_version() -> &'static str {
                 "1.0.0-turbo"
             }
 
-            /// Zero-Decode constructor — populates from a KView without copying
-            /// string data (lazy decode).
             pub fn from_kview<'a>(view: &kowito_json::KView<'a>) -> Self {
-                Self {
-                    #(
-                        #fields_init,
-                    )*
-                }
+                let _ = view;
+                Self { #( #fields_init, )* }
             }
 
-            /// Ultra-Fast Schema-JIT Serializer.
-            ///
-            /// The JSON object layout is baked in at *compile time*:
-            /// - All field-key prefixes are static byte slices (`&'static [u8]`)
-            ///   stored in the read-only data segment — no heap allocation.
-            /// - Integer fields use `itoa` (lookup-table based, branchless).
-            /// - Float fields use `ryu` (Grisu3/Dragon4 — shortest round-trip).
-            /// - String fields use the NEON SIMD escape fast-path in
-            ///   `kowito_json::serialize::write_str_escape`.
-            ///
-            /// A single `reserve` call at the top pre-allocates the estimated
-            /// capacity so the hot loop below never reallocates for typical
-            /// small payloads.
             #[inline]
             pub fn to_json_bytes(&self, buf: &mut Vec<u8>) {
                 let old_len = buf.len();
-                let mut dynamic_cap = 0;
-                #(
-                    dynamic_cap += #dynamic_cap_stmts;
-                )*
+                let mut dynamic_cap = 0usize;
+                #( dynamic_cap += #dynamic_cap_stmts; )*
                 buf.reserve(#static_cap + dynamic_cap);
                 unsafe {
                     let mut curr = buf.as_mut_ptr().add(old_len);
-                    #(
-                        curr = #serialize_stmts;
-                    )*
+                    #( #serialize_stmts )*
                     buf.set_len(curr.offset_from(buf.as_ptr()) as usize);
                 }
             }
-
         }
 
         impl kowito_json::serialize::Serialize for #name {
@@ -182,13 +232,338 @@ pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
         impl kowito_json::serialize::SerializeRaw for #name {
             #[inline(always)]
             unsafe fn serialize_raw(&self, mut curr: *mut u8) -> *mut u8 {
-                #(
-                    curr = #serialize_stmts;
-                )*
+                #( #serialize_stmts )*
                 curr
             }
+        }
+
+        impl serde::Serialize for #name {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+                let mut _serde_state = serde::Serializer::serialize_struct(
+                    serializer, stringify!(#name), #total_visible)?;
+                #( #serde_field_stmts )*
+                serde::ser::SerializeStruct::end(_serde_state)
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Newtype struct  Foo(T)
+// ---------------------------------------------------------------------------
+
+fn gen_newtype_struct(name: &syn::Ident, field: &syn::Field) -> proc_macro2::TokenStream {
+    let ty = &field.ty;
+    let cap = value_capacity_estimate(ty);
+    quote! {
+        impl #name {
+            #[inline(always)]
+            pub fn kowito_json_schema_version() -> &'static str {
+                "1.0.0-turbo"
+            }
+
+            #[inline]
+            pub fn to_json_bytes(&self, buf: &mut Vec<u8>) {
+                buf.reserve(#cap);
+                kowito_json::serialize::write_value(&self.0, buf);
+            }
+        }
+
+        impl kowito_json::serialize::Serialize for #name {
+            #[inline(always)]
+            fn serialize(&self, buf: &mut Vec<u8>) {
+                self.to_json_bytes(buf);
+            }
+        }
+
+        impl kowito_json::serialize::SerializeRaw for #name {
+            #[inline(always)]
+            unsafe fn serialize_raw(&self, curr: *mut u8) -> *mut u8 {
+                unsafe { kowito_json::serialize::write_value_raw(&self.0, curr) }
+            }
+        }
+
+        impl serde::Serialize for #name {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+                self.0.serialize(serializer)
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tuple struct  Foo(A, B, C)
+// ---------------------------------------------------------------------------
+
+fn gen_tuple_struct(name: &syn::Ident, fields: &syn::FieldsUnnamed) -> proc_macro2::TokenStream {
+    let indices: Vec<syn::Index> = (0..fields.unnamed.len())
+        .map(syn::Index::from)
+        .collect();
+    let types: Vec<_> = fields.unnamed.iter().map(|f| &f.ty).collect();
+    let caps: Vec<usize> = types.iter().map(|t| value_capacity_estimate(t)).collect();
+    let total_cap: usize = caps.iter().sum::<usize>() + fields.unnamed.len() + 2;
+    let len = fields.unnamed.len();
+
+    quote! {
+        impl #name {
+            #[inline(always)]
+            pub fn kowito_json_schema_version() -> &'static str {
+                "1.0.0-turbo"
+            }
+
+            #[inline]
+            pub fn to_json_bytes(&self, buf: &mut Vec<u8>) {
+                buf.reserve(#total_cap);
+                buf.push(b'[');
+                #(
+                    if #indices > 0 { buf.push(b','); }
+                    kowito_json::serialize::write_value(&self.#indices, buf);
+                )*
+                buf.push(b']');
+            }
+        }
+
+        impl kowito_json::serialize::Serialize for #name {
+            #[inline(always)]
+            fn serialize(&self, buf: &mut Vec<u8>) {
+                self.to_json_bytes(buf);
+            }
+        }
+
+        impl serde::Serialize for #name {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+                use serde::ser::SerializeTupleStruct;
+                let mut state = serializer.serialize_tuple_struct(stringify!(#name), #len)?;
+                #( state.serialize_field(&self.#indices)?; )*
+                state.end()
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Unit struct  Foo
+// ---------------------------------------------------------------------------
+
+fn gen_unit_struct(name: &syn::Ident) -> proc_macro2::TokenStream {
+    quote! {
+        impl #name {
+            #[inline(always)]
+            pub fn kowito_json_schema_version() -> &'static str {
+                "1.0.0-turbo"
+            }
+
+            #[inline]
+            pub fn to_json_bytes(&self, buf: &mut Vec<u8>) {
+                buf.extend_from_slice(b"null");
+            }
+        }
+
+        impl kowito_json::serialize::Serialize for #name {
+            #[inline(always)]
+            fn serialize(&self, buf: &mut Vec<u8>) {
+                self.to_json_bytes(buf);
+            }
+        }
+
+        impl serde::Serialize for #name {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+                serializer.serialize_unit_struct(stringify!(#name))
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Enum  (externally tagged — matches serde_json default)
+// ---------------------------------------------------------------------------
+
+fn gen_enum(name: &syn::Ident, data: &DataEnum) -> proc_macro2::TokenStream {
+    let mut to_json_arms = Vec::new();
+    let mut serde_arms = Vec::new();
+
+    for (vi, variant) in data.variants.iter().enumerate() {
+        let vident = &variant.ident;
+        let variant_name = vident.to_string();
+        let vi_u32 = vi as u32;
+
+        match &variant.fields {
+            // Unit variant → "VariantName"
+            Fields::Unit => {
+                let quoted = format!("\"{}\"", variant_name);
+                let quoted_bytes =
+                    syn::LitByteStr::new(quoted.as_bytes(), proc_macro2::Span::call_site());
+                to_json_arms.push(quote! {
+                    #name::#vident => {
+                        buf.extend_from_slice(#quoted_bytes);
+                    }
+                });
+                serde_arms.push(quote! {
+                    #name::#vident => {
+                        serializer.serialize_unit_variant(stringify!(#name), #vi_u32, #variant_name)
+                    }
+                });
+            }
+
+            // Newtype variant → {"VariantName":value}
+            Fields::Unnamed(fu) if fu.unnamed.len() == 1 => {
+                let prefix = format!("{{\"{}\":", variant_name);
+                let prefix_bytes =
+                    syn::LitByteStr::new(prefix.as_bytes(), proc_macro2::Span::call_site());
+                to_json_arms.push(quote! {
+                    #name::#vident(inner) => {
+                        buf.extend_from_slice(#prefix_bytes);
+                        kowito_json::serialize::write_value(inner, buf);
+                        buf.push(b'}');
+                    }
+                });
+                serde_arms.push(quote! {
+                    #name::#vident(inner) => {
+                        serializer.serialize_newtype_variant(stringify!(#name), #vi_u32, #variant_name, inner)
+                    }
+                });
+            }
+
+            // Tuple variant → {"VariantName":[a,b,...]}
+            Fields::Unnamed(fu) => {
+                let indices: Vec<syn::Ident> = (0..fu.unnamed.len())
+                    .map(|i| syn::Ident::new(&format!("_f{}", i), proc_macro2::Span::call_site()))
+                    .collect();
+                let prefix = format!("{{\"{}\":[", variant_name);
+                let prefix_bytes =
+                    syn::LitByteStr::new(prefix.as_bytes(), proc_macro2::Span::call_site());
+                let len = fu.unnamed.len();
+                to_json_arms.push(quote! {
+                    #name::#vident(#( #indices ),*) => {
+                        buf.extend_from_slice(#prefix_bytes);
+                        let mut _first = true;
+                        #(
+                            if !_first { buf.push(b','); }
+                            _first = false;
+                            kowito_json::serialize::write_value(#indices, buf);
+                        )*
+                        buf.extend_from_slice(b"]}");
+                    }
+                });
+                serde_arms.push(quote! {
+                    #name::#vident(#( #indices ),*) => {
+                        use serde::ser::SerializeTupleVariant;
+                        let mut state = serializer.serialize_tuple_variant(
+                            stringify!(#name), #vi_u32, #variant_name, #len)?;
+                        #( state.serialize_field(#indices)?; )*
+                        state.end()
+                    }
+                });
+            }
+
+            // Struct variant → {"VariantName":{"field":value,...}}
+            Fields::Named(fn_) => {
+                let fidents: Vec<_> =
+                    fn_.named.iter().map(|f| f.ident.as_ref().unwrap()).collect();
+                let fnames: Vec<String> = fidents.iter().map(|i| i.to_string()).collect();
+                let prefix = format!("{{\"{}\":{{", variant_name);
+                let prefix_bytes =
+                    syn::LitByteStr::new(prefix.as_bytes(), proc_macro2::Span::call_site());
+                let len = fidents.len();
+
+                let field_stmts: Vec<_> = fidents.iter().zip(fnames.iter()).enumerate().map(|(i, (fi, fn_))| {
+                    let sep = if i == 0 {
+                        format!("\"{}\":", fn_)
+                    } else {
+                        format!(",\"{}\":", fn_)
+                    };
+                    let sep_bytes =
+                        syn::LitByteStr::new(sep.as_bytes(), proc_macro2::Span::call_site());
+                    quote! {
+                        buf.extend_from_slice(#sep_bytes);
+                        kowito_json::serialize::write_value(#fi, buf);
+                    }
+                }).collect();
+
+                to_json_arms.push(quote! {
+                    #name::#vident { #( #fidents ),* } => {
+                        buf.extend_from_slice(#prefix_bytes);
+                        #( #field_stmts )*
+                        buf.extend_from_slice(b"}}");
+                    }
+                });
+
+                serde_arms.push(quote! {
+                    #name::#vident { #( #fidents ),* } => {
+                        use serde::ser::SerializeStructVariant;
+                        let mut state = serializer.serialize_struct_variant(
+                            stringify!(#name), #vi_u32, #variant_name, #len)?;
+                        #( state.serialize_field(#fnames, #fidents)?; )*
+                        state.end()
+                    }
+                });
+            }
+        }
+    }
+
+    quote! {
+        impl #name {
+            #[inline(always)]
+            pub fn kowito_json_schema_version() -> &'static str {
+                "1.0.0-turbo"
+            }
+
+            #[inline]
+            pub fn to_json_bytes(&self, buf: &mut Vec<u8>) {
+                match self {
+                    #( #to_json_arms )*
+                }
+            }
+        }
+
+        impl kowito_json::serialize::Serialize for #name {
+            #[inline(always)]
+            fn serialize(&self, buf: &mut Vec<u8>) {
+                self.to_json_bytes(buf);
+            }
+        }
+
+        impl serde::Serialize for #name {
+            fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+                match self {
+                    #( #serde_arms )*
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+#[proc_macro_derive(KJson, attributes(kjson))]
+pub fn kowito_json_derive(input: TokenStream) -> TokenStream {
+    let input = parse_macro_input!(input as DeriveInput);
+    let name = &input.ident;
+
+    let expanded = match &input.data {
+        Data::Struct(DataStruct { fields: Fields::Named(fn_), .. }) => {
+            gen_named_struct(name, fn_)
+        }
+        Data::Struct(DataStruct { fields: Fields::Unnamed(fu), .. }) => {
+            if fu.unnamed.len() == 1 {
+                gen_newtype_struct(name, fu.unnamed.first().unwrap())
+            } else {
+                gen_tuple_struct(name, fu)
+            }
+        }
+        Data::Struct(DataStruct { fields: Fields::Unit, .. }) => {
+            gen_unit_struct(name)
+        }
+        Data::Enum(de) => gen_enum(name, de),
+        Data::Union(_) => {
+            return syn::Error::new_spanned(name, "KJson does not support unions")
+                .to_compile_error()
+                .into();
         }
     };
 
     TokenStream::from(expanded)
 }
+

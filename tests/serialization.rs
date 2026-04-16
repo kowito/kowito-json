@@ -1,5 +1,6 @@
 use kowito_json::KJson;
 use std::borrow::Cow;
+use std::collections::HashMap;
 
 #[derive(KJson, Debug, Default)]
 struct Child {
@@ -115,4 +116,267 @@ fn test_long_string_simd_fast_path() {
     let json2 = String::from_utf8(buf.clone()).unwrap();
     let p2: serde_json::Value = serde_json::from_str(&json2).unwrap();
     assert_eq!(p2["data"], long_with_escape);
+}
+
+// ===========================================================================
+// serde_json-compatible serializer tests (kowito::to_string / to_vec / etc.)
+// ===========================================================================
+
+// ---------------------------------------------------------------------------
+// Primitives + serde round-trip
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_serde_primitives_parity() {
+    macro_rules! check {
+        ($v:expr) => {{
+            let kowito = kowito_json::to_string(&$v).unwrap();
+            let serde = serde_json::to_string(&$v).unwrap();
+            assert_eq!(kowito, serde, "mismatch for {:?}", $v);
+        }};
+    }
+    check!(true);
+    check!(false);
+    check!(42i32);
+    check!(-1i64);
+    check!(u64::MAX);
+    check!(3.14f64);
+    check!("hello \"world\"");
+    check!(Option::<i32>::None);
+    check!(Some(99u32));
+    check!(vec![1u32, 2, 3]);
+    check!((10u32, "str", true));
+}
+
+// ---------------------------------------------------------------------------
+// HashMap
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_serde_hashmap() {
+    let mut map: HashMap<String, i32> = HashMap::new();
+    map.insert("a".to_string(), 1);
+    map.insert("b".to_string(), 2);
+
+    let json = kowito_json::to_string(&map).unwrap();
+    // Parse back and compare semantically (key order may differ)
+    let back: HashMap<String, i32> = serde_json::from_str(&json).unwrap();
+    assert_eq!(back, map);
+}
+
+// ---------------------------------------------------------------------------
+// Enums via KJson derive (to_json_bytes fast path)
+// ---------------------------------------------------------------------------
+
+#[derive(KJson, Debug, PartialEq)]
+enum Shape {
+    Circle,
+    Width(f64),
+    Point(f64, f64),
+    Rect { w: f64, h: f64 },
+}
+
+#[test]
+fn test_enum_unit_variant() {
+    let mut buf = Vec::new();
+    Shape::Circle.to_json_bytes(&mut buf);
+    assert_eq!(String::from_utf8(buf).unwrap(), r#""Circle""#);
+}
+
+#[test]
+fn test_enum_newtype_variant() {
+    let mut buf = Vec::new();
+    Shape::Width(3.14).to_json_bytes(&mut buf);
+    let json = String::from_utf8(buf).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(v["Width"], 3.14);
+}
+
+#[test]
+fn test_enum_tuple_variant() {
+    let mut buf = Vec::new();
+    Shape::Point(1.0, 2.0).to_json_bytes(&mut buf);
+    let json = String::from_utf8(buf).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(v["Point"][0], 1.0);
+    assert_eq!(v["Point"][1], 2.0);
+}
+
+#[test]
+fn test_enum_struct_variant() {
+    let mut buf = Vec::new();
+    Shape::Rect { w: 4.0, h: 5.0 }.to_json_bytes(&mut buf);
+    let json = String::from_utf8(buf).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(v["Rect"]["w"], 4.0);
+    assert_eq!(v["Rect"]["h"], 5.0);
+}
+
+// Enum via serde path (to_string)
+#[test]
+fn test_enum_serde_path_parity() {
+    for shape in [
+        Shape::Circle,
+        Shape::Width(2.0),
+        Shape::Point(1.0, 3.0),
+        Shape::Rect { w: 10.0, h: 20.0 },
+    ] {
+        let kowito_fast = {
+            let mut buf = Vec::new();
+            shape.to_json_bytes(&mut buf);
+            String::from_utf8(buf).unwrap()
+        };
+        let kowito_serde = kowito_json::to_string(&shape).unwrap();
+        // Both should parse to the same JSON value
+        let v_fast: serde_json::Value = serde_json::from_str(&kowito_fast).unwrap();
+        let v_serde: serde_json::Value = serde_json::from_str(&kowito_serde).unwrap();
+        assert_eq!(v_fast, v_serde);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Newtype struct
+// ---------------------------------------------------------------------------
+
+#[derive(KJson, Debug)]
+struct UserId(u64);
+
+#[test]
+fn test_newtype_struct() {
+    let mut buf = Vec::new();
+    UserId(42).to_json_bytes(&mut buf);
+    assert_eq!(String::from_utf8(buf).unwrap(), "42");
+
+    let serde_out = kowito_json::to_string(&UserId(99)).unwrap();
+    assert_eq!(serde_out, "99");
+}
+
+// ---------------------------------------------------------------------------
+// Tuple struct
+// ---------------------------------------------------------------------------
+
+#[derive(KJson, Debug)]
+struct Point2D(f64, f64);
+
+#[test]
+fn test_tuple_struct() {
+    let mut buf = Vec::new();
+    Point2D(1.5, 2.5).to_json_bytes(&mut buf);
+    let json = String::from_utf8(buf).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(v[0], 1.5);
+    assert_eq!(v[1], 2.5);
+}
+
+// ---------------------------------------------------------------------------
+// Unit struct
+// ---------------------------------------------------------------------------
+
+#[derive(KJson, Debug)]
+struct Marker;
+
+#[test]
+fn test_unit_struct() {
+    let mut buf = Vec::new();
+    Marker.to_json_bytes(&mut buf);
+    assert_eq!(String::from_utf8(buf).unwrap(), "null");
+}
+
+// ---------------------------------------------------------------------------
+// #[kjson(rename)] and #[kjson(skip)]
+// ---------------------------------------------------------------------------
+
+#[derive(KJson, Debug)]
+struct ApiUser {
+    #[kjson(rename = "userId")]
+    pub id: u64,
+    pub name: String,
+    #[kjson(skip)]
+    pub internal_token: String,
+}
+
+#[test]
+fn test_kjson_rename_and_skip() {
+    let u = ApiUser {
+        id: 7,
+        name: "Bob".to_string(),
+        internal_token: "secret".to_string(),
+    };
+    let mut buf = Vec::new();
+    u.to_json_bytes(&mut buf);
+    let json = String::from_utf8(buf).unwrap();
+    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+    assert_eq!(v["userId"], 7);
+    assert_eq!(v["name"], "Bob");
+    assert!(v.get("internal_token").is_none(), "skipped field must not appear");
+    assert!(v.get("id").is_none(), "original field name must not appear after rename");
+}
+
+// ---------------------------------------------------------------------------
+// #[kjson(skip_serializing_if)]
+// ---------------------------------------------------------------------------
+
+fn is_zero(v: &u32) -> bool { *v == 0 }
+
+#[derive(KJson, Debug)]
+struct Metrics {
+    pub hits: u32,
+    #[kjson(skip_serializing_if = "is_zero")]
+    pub errors: u32,
+}
+
+#[test]
+fn test_kjson_skip_serializing_if() {
+    let m_with = Metrics { hits: 10, errors: 5 };
+    let mut buf = Vec::new();
+    m_with.to_json_bytes(&mut buf);
+    let json = String::from_utf8(buf).unwrap();
+    assert!(json.contains("\"errors\":5"));
+
+    let m_zero = Metrics { hits: 10, errors: 0 };
+    let mut buf2 = Vec::new();
+    m_zero.to_json_bytes(&mut buf2);
+    let json2 = String::from_utf8(buf2).unwrap();
+    assert!(!json2.contains("errors"), "zero errors field should be skipped");
+}
+
+// ---------------------------------------------------------------------------
+// Pretty-print
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_to_string_pretty() {
+    #[derive(serde::Serialize)]
+    struct Item { x: u32, y: u32 }
+    let item = Item { x: 1, y: 2 };
+    let pretty = kowito_json::to_string_pretty(&item).unwrap();
+    // Must contain newlines and indentation
+    assert!(pretty.contains('\n'));
+    assert!(pretty.contains("  "));
+    // Must still be valid JSON
+    let v: serde_json::Value = serde_json::from_str(&pretty).unwrap();
+    assert_eq!(v["x"], 1);
+    assert_eq!(v["y"], 2);
+}
+
+// ---------------------------------------------------------------------------
+// to_writer / to_writer_pretty
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_to_writer() {
+    let mut out: Vec<u8> = Vec::new();
+    kowito_json::to_writer(&mut out, &vec![1u32, 2, 3]).unwrap();
+    assert_eq!(String::from_utf8(out).unwrap(), "[1,2,3]");
+}
+
+#[test]
+fn test_to_writer_pretty() {
+    let mut out: Vec<u8> = Vec::new();
+    kowito_json::to_writer_pretty(&mut out, &vec![1u32, 2]).unwrap();
+    let s = String::from_utf8(out).unwrap();
+    assert!(s.contains('\n'));
+    let v: serde_json::Value = serde_json::from_str(&s).unwrap();
+    assert_eq!(v[0], 1);
+    assert_eq!(v[1], 2);
 }

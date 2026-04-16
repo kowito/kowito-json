@@ -817,3 +817,126 @@ impl<'a, T: SerializeRaw + ?Sized + ToOwned> SerializeRaw for Cow<'a, T> {
         unsafe { self.as_ref().serialize_raw(curr) }
     }
 }
+
+// ---------------------------------------------------------------------------
+// io::Write-based string writer (used by the serde Serializer backend)
+// ---------------------------------------------------------------------------
+
+/// Write `bytes` as a JSON string (with opening/closing `"`) into any
+/// `io::Write` target, using the same SIMD escape-detection logic as
+/// [`write_str_escape`] but flushing to a writer instead of a `Vec<u8>`.
+pub fn write_str_escape_writer<W: std::io::Write>(
+    w: &mut W,
+    bytes: &[u8],
+) -> std::io::Result<()> {
+    w.write_all(b"\"")?;
+    let len = bytes.len();
+    let mut start = 0usize;
+    let mut i = 0usize;
+
+    // Shared scalar escape logic, written as an inline helper to keep this
+    // function from growing too large.
+    #[inline(always)]
+    fn write_escape_seq<W: std::io::Write>(w: &mut W, b: u8) -> std::io::Result<()> {
+        let esc = unsafe { *ESCAPE_TABLE.get_unchecked(b as usize) };
+        match esc {
+            b'u' => {
+                w.write_all(b"\\u00")?;
+                let hi = (b >> 4) & 0xF;
+                let lo = b & 0xF;
+                let hex = [
+                    if hi < 10 { b'0' + hi } else { b'a' + hi - 10 },
+                    if lo < 10 { b'0' + lo } else { b'a' + lo - 10 },
+                ];
+                w.write_all(&hex)
+            }
+            c => w.write_all(&[b'\\', c]),
+        }
+    }
+
+    // Reuse the SIMD escape-mask functions already defined above to scan for
+    // positions that need escaping, then bulk-copy the clean runs between
+    // them via `write_all`.
+    macro_rules! drain_escape_writer {
+        ($w:expr, $bytes:expr, $start:expr, $base:expr, $mask:expr) => {{
+            let mut m = $mask;
+            while m != 0 {
+                let tz = m.trailing_zeros() as usize;
+                m &= m.wrapping_sub(1);
+                let pos = $base + tz;
+                if $start < pos {
+                    $w.write_all(unsafe { $bytes.get_unchecked($start..pos) })?;
+                }
+                let byte = unsafe { *$bytes.get_unchecked(pos) };
+                write_escape_seq($w, byte)?;
+                $start = pos + 1;
+            }
+        }};
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        while i + 64 <= len {
+            let mask = unsafe { escape_mask_neon_x64(bytes.as_ptr().add(i)) };
+            if mask != 0 {
+                drain_escape_writer!(w, bytes, start, i, mask);
+            }
+            i += 64;
+        }
+        while i + 32 <= len {
+            let mask = unsafe { escape_mask_neon_x32(bytes.as_ptr().add(i)) } as u64;
+            if mask != 0 {
+                drain_escape_writer!(w, bytes, start, i, mask);
+            }
+            i += 32;
+        }
+        while i + 16 <= len {
+            let mask = unsafe { escape_mask_neon_x16(bytes.as_ptr().add(i)) } as u64;
+            if mask != 0 {
+                drain_escape_writer!(w, bytes, start, i, mask);
+            }
+            i += 16;
+        }
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        if is_x86_feature_detected!("avx2") {
+            while i + 64 <= len {
+                let mask = unsafe { escape_mask_avx2_x2(bytes.as_ptr().add(i)) };
+                if mask != 0 {
+                    drain_escape_writer!(w, bytes, start, i, mask);
+                }
+                i += 64;
+            }
+            while i + 32 <= len {
+                let mask = unsafe { escape_mask_avx2(bytes.as_ptr().add(i)) } as u64;
+                if mask != 0 {
+                    drain_escape_writer!(w, bytes, start, i, mask);
+                }
+                i += 32;
+            }
+        }
+    }
+
+    // Scalar tail
+    while i < len {
+        let b = unsafe { *bytes.get_unchecked(i) };
+        let esc = unsafe { *ESCAPE_TABLE.get_unchecked(b as usize) };
+        if esc != 0 {
+            if start < i {
+                w.write_all(unsafe { bytes.get_unchecked(start..i) })?;
+            }
+            write_escape_seq(w, b)?;
+            start = i + 1;
+        }
+        i += 1;
+    }
+
+    if start < len {
+        w.write_all(unsafe { bytes.get_unchecked(start..len) })?;
+    }
+
+    w.write_all(b"\"")?;
+    Ok(())
+}
