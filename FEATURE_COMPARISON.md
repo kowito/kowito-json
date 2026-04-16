@@ -55,7 +55,7 @@ Legend: ✅ Supported · ❌ Not supported · ⚠️ Partial · 🚧 Planned
 
 | Feature | kowito-json | serde_json | Notes |
 |:---|:---:|:---:|:---|
-| Stable Rust | ❌ | ✅ | kowito requires nightly (`portable_simd`, intrinsics) |
+| Stable Rust | ✅ | ✅ | `std::arch` intrinsics + `#[target_feature]` are stable; tested on rustc 1.85+ |
 | `no_std` + `alloc` | ❌ | ✅ | kowito uses `thread_local!`, `std` features |
 | ARM64 NEON (Apple Silicon / Graviton) | ✅ | ❌ | |
 | x86_64 AVX2 + PCLMULQDQ | ✅ | ❌ | |
@@ -103,7 +103,7 @@ Legend: ✅ Supported · ❌ Not supported · ⚠️ Partial · 🚧 Planned
 | Maximum throughput, known schema, nightly Rust | **kowito-json** |
 | Arbitrary / dynamic JSON documents | serde_json |
 | Enum variants in JSON payload | **kowito-json** |
-| Stable Rust / `no_std` targets | serde_json |
+| `no_std` targets | serde_json |
 | Serde ecosystem interop (`#[serde(...)]` attrs) | serde_json |
 | Microservice hot-path with fixed struct schema | **kowito-json** |
 | Logging pipelines, real-time serialization | **kowito-json** |

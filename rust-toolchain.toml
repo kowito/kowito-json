@@ -1,0 +1,4 @@
+[toolchain]
+# Minimum supported: stable 1.85 (Rust 2024 edition + stable std::arch intrinsics)
+# Using a recent stable; override to nightly for SVE2/AMX prototype paths.
+channel = "stable"
