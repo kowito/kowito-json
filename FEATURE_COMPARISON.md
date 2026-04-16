@@ -1,0 +1,110 @@
+# Feature Comparison: kowito-json vs serde_json
+
+Legend: ✅ Supported · ❌ Not supported · ⚠️ Partial · 🚧 Planned
+
+---
+
+## Serialization
+
+| Feature | kowito-json | serde_json | Notes |
+|:---|:---:|:---:|:---|
+| Struct serialization | ✅ | ✅ | kowito via `#[derive(KJson)]`; serde via `Serialize` |
+| Enum serialization | ❌ | ✅ | kowito only handles structs |
+| HashMap / BTreeMap | ❌ | ✅ | |
+| Tuple / tuple struct | ❌ | ✅ | |
+| Unit struct / newtype wrapper | ❌ | ✅ | |
+| `Vec<T>` / slices | ✅ | ✅ | |
+| `Option<T>` | ✅ | ✅ | |
+| `Box<T>` / `Cow<str>` | ✅ | ✅ | |
+| Primitive integers (i8–i64, u8–u64) | ✅ | ✅ | |
+| f32 / f64 | ✅ | ✅ | kowito uses `ryu`; serde uses `ryu` too |
+| bool | ✅ | ✅ | |
+| String with SIMD escape scanning | ✅ | ❌ | kowito: NEON / AVX2 |
+| Pretty-print output | ❌ | ✅ | |
+| Write to `io::Write` / streaming output | ❌ | ✅ | kowito only writes to `Vec<u8>` |
+| Compile-time key baking (Schema-JIT) | ✅ | ❌ | kowito bakes `"field":` as `&'static [u8]` |
+| Custom serializer impl (manual) | ✅ | ✅ | kowito: `Serialize` + `SerializeRaw` traits |
+| `serde::Serialize` ecosystem compatibility | ❌ | ✅ | kowito uses its own trait |
+
+---
+
+## Parsing / Deserialization
+
+| Feature | kowito-json | serde_json | Notes |
+|:---|:---:|:---:|:---|
+| Struct deserialization | ⚠️ | ✅ | kowito: `from_kview()` derive only; no field rename/skip |
+| Enum deserialization | ❌ | ✅ | |
+| HashMap / BTreeMap | ❌ | ✅ | |
+| `serde::Deserialize` ecosystem compatibility | ❌ | ✅ | |
+| Zero-decode / lazy field access | ✅ | ❌ | kowito scans to tape without decoding values |
+| Full-document `Value` type | ❌ | ✅ | serde: `serde_json::Value`; kowito: no equivalent |
+| Structural tape (u32 token stream) | ✅ | ❌ | kowito: flat `Vec<u32>` tape |
+| SIMD structural scanning | ✅ | ❌ | kowito: PMULL / AVX2+PCLMULQDQ |
+| Arena / zero-allocation parse | ✅ | ❌ | kowito: `Scratchpad` + `with_scratch_tape` |
+| Random-access field lookup (KView) | ⚠️ | ❌ | `KView` API exists but is early-stage |
+| Number lazily decoded from raw bytes | ✅ | ❌ | kowito: `KNode::Number(&[u8])` |
+| String lazily decoded (`KString`) | ✅ | ❌ | kowito: zero-copy, decode only on access |
+| UTF-8 validation | ⚠️ | ✅ | kowito assumes valid UTF-8 input |
+| Detailed error messages (line / column) | ❌ | ✅ | |
+| Streaming / incremental parse | ❌ | ✅ | |
+| `from_str` / `from_slice` convenience API | ❌ | ✅ | kowito requires `Scanner` + `KView` manually |
+
+---
+
+## Runtime & Platform
+
+| Feature | kowito-json | serde_json | Notes |
+|:---|:---:|:---:|:---|
+| Stable Rust | ❌ | ✅ | kowito requires nightly (`portable_simd`, intrinsics) |
+| `no_std` + `alloc` | ❌ | ✅ | kowito uses `thread_local!`, `std` features |
+| ARM64 NEON (Apple Silicon / Graviton) | ✅ | ❌ | |
+| x86_64 AVX2 + PCLMULQDQ | ✅ | ❌ | |
+| SVE2 (AArch64 v9) | 🚧 | ❌ | prototype in `scanner/sve2.rs` |
+| AMX (Apple Matrix coprocessor) | 🚧 | ❌ | prototype in `scanner/amx.rs` |
+| Generic portable SIMD fallback | ✅ | ❌ | |
+| Universal architecture support | ❌ | ✅ | serde_json compiles anywhere |
+| Thread-local scratchpad | ✅ | ❌ | `GLOBAL_SCRATCHPAD` (1M entries) |
+
+---
+
+## Developer Experience
+
+| Feature | kowito-json | serde_json | Notes |
+|:---|:---:|:---:|:---|
+| Derive macro | ✅ | ✅ | kowito: `#[derive(KJson)]`; serde: `#[derive(Serialize, Deserialize)]` |
+| Field rename (`#[serde(rename)]`) | ❌ | ✅ | |
+| Field skip (`#[serde(skip)]`) | ❌ | ✅ | |
+| Default values (`#[serde(default)]`) | ❌ | ✅ | |
+| Flatten (`#[serde(flatten)]`) | ❌ | ✅ | |
+| Custom deserializer hooks | ❌ | ✅ | |
+| JSON path / pointer | ❌ | ✅ | `serde_json::Value::pointer()` |
+| `json!` macro | ❌ | ✅ | |
+| Merge / patch JSON | ❌ | ✅ | `json_patch` crate via serde |
+| Crates.io maturity | Early | Stable | serde_json: 600M+ downloads |
+| Documentation coverage | Partial | Extensive | |
+
+---
+
+## Performance Summary
+
+| Metric | kowito-json | serde_json |
+|:---|:---:|:---:|
+| Parsing throughput (12 MB corpus) | **~7.98 GiB/s** | ~0.241 GiB/s |
+| Micro serialization (3 fields) | **11.2 ns** | 34.3 ns |
+| Hot-loop serialization (1000 items) | **44.4 µs** | 91.3 µs |
+| Large-string serialization (10 KB) | 383.6 ns | 2649 ns |
+
+---
+
+## When to Choose Each
+
+| Scenario | Recommendation |
+|:---|:---|
+| Maximum throughput, known schema, nightly Rust | **kowito-json** |
+| Arbitrary / dynamic JSON documents | serde_json |
+| Enum variants in JSON payload | serde_json |
+| Stable Rust / `no_std` targets | serde_json |
+| Serde ecosystem interop (`#[serde(...)]` attrs) | serde_json |
+| Microservice hot-path with fixed struct schema | **kowito-json** |
+| Logging pipelines, real-time serialization | **kowito-json** |
+| General-purpose production use today | serde_json |
