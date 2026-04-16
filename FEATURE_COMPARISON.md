@@ -9,10 +9,10 @@ Legend: ✅ Supported · ❌ Not supported · ⚠️ Partial · 🚧 Planned
 | Feature | kowito-json | serde_json | Notes |
 |:---|:---:|:---:|:---|
 | Struct serialization | ✅ | ✅ | kowito via `#[derive(KJson)]`; serde via `Serialize` |
-| Enum serialization | ❌ | ✅ | kowito only handles structs |
-| HashMap / BTreeMap | ❌ | ✅ | |
-| Tuple / tuple struct | ❌ | ✅ | |
-| Unit struct / newtype wrapper | ❌ | ✅ | |
+| Enum serialization | ✅ | ✅ | all 4 variant kinds: unit / newtype / tuple / struct |
+| HashMap / BTreeMap | ✅ | ✅ | via `serde::Serialize` path |
+| Tuple / tuple struct | ✅ | ✅ | |
+| Unit struct / newtype wrapper | ✅ | ✅ | |
 | `Vec<T>` / slices | ✅ | ✅ | |
 | `Option<T>` | ✅ | ✅ | |
 | `Box<T>` / `Cow<str>` | ✅ | ✅ | |
@@ -20,11 +20,11 @@ Legend: ✅ Supported · ❌ Not supported · ⚠️ Partial · 🚧 Planned
 | f32 / f64 | ✅ | ✅ | kowito uses `ryu`; serde uses `ryu` too |
 | bool | ✅ | ✅ | |
 | String with SIMD escape scanning | ✅ | ❌ | kowito: NEON / AVX2 |
-| Pretty-print output | ❌ | ✅ | |
-| Write to `io::Write` / streaming output | ❌ | ✅ | kowito only writes to `Vec<u8>` |
+| Pretty-print output | ✅ | ✅ | `to_string_pretty` / `to_writer_pretty` |
+| Write to `io::Write` / streaming output | ✅ | ✅ | `to_writer` / `to_writer_pretty` |
 | Compile-time key baking (Schema-JIT) | ✅ | ❌ | kowito bakes `"field":` as `&'static [u8]` |
 | Custom serializer impl (manual) | ✅ | ✅ | kowito: `Serialize` + `SerializeRaw` traits |
-| `serde::Serialize` ecosystem compatibility | ❌ | ✅ | kowito uses its own trait |
+| `serde::Serialize` ecosystem compatibility | ✅ | ✅ | `KowitoSerializer<W,F>` implements `serde::Serializer` |
 
 ---
 
@@ -72,8 +72,8 @@ Legend: ✅ Supported · ❌ Not supported · ⚠️ Partial · 🚧 Planned
 | Feature | kowito-json | serde_json | Notes |
 |:---|:---:|:---:|:---|
 | Derive macro | ✅ | ✅ | kowito: `#[derive(KJson)]`; serde: `#[derive(Serialize, Deserialize)]` |
-| Field rename (`#[serde(rename)]`) | ❌ | ✅ | |
-| Field skip (`#[serde(skip)]`) | ❌ | ✅ | |
+| Field rename (`#[serde(rename)]`) | ✅ | ✅ | `#[kjson(rename = "name")]` |
+| Field skip (`#[serde(skip)]`) | ✅ | ✅ | `#[kjson(skip)]` / `#[kjson(skip_serializing_if = "fn")]` |
 | Default values (`#[serde(default)]`) | ❌ | ✅ | |
 | Flatten (`#[serde(flatten)]`) | ❌ | ✅ | |
 | Custom deserializer hooks | ❌ | ✅ | |
