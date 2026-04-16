@@ -5,7 +5,7 @@ use std::hint::black_box;
 // ---------------------------------------------------------------------------
 // Payload A – tiny HTTP-style response (3 fields)
 // ---------------------------------------------------------------------------
-#[derive(KJson, Debug, serde::Serialize)]
+#[derive(KJson, Debug)]
 pub struct MessageResponse {
     pub message: String,
     pub status: i32,
@@ -15,7 +15,7 @@ pub struct MessageResponse {
 // ---------------------------------------------------------------------------
 // Payload B – medium user record (7 fields, mixed types)
 // ---------------------------------------------------------------------------
-#[derive(KJson, Debug, serde::Serialize)]
+#[derive(KJson, Debug)]
 pub struct UserRecord {
     pub id: u64,
     pub username: String,
@@ -29,7 +29,7 @@ pub struct UserRecord {
 // ---------------------------------------------------------------------------
 // Payload C – metrics / telemetry (all numeric, 8 fields)
 // ---------------------------------------------------------------------------
-#[derive(KJson, Debug, serde::Serialize)]
+#[derive(KJson, Debug)]
 pub struct Metrics {
     pub requests: u64,
     pub errors: u64,
@@ -39,12 +39,6 @@ pub struct Metrics {
     pub cpu_pct: f32,
     pub mem_bytes: u64,
     pub timestamp: i64,
-}
-
-#[derive(KJson, Debug, serde::Serialize)]
-pub struct LongStringRecord {
-    pub id: u64,
-    pub data: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -81,6 +75,13 @@ fn numeric_payload() -> Metrics {
         mem_bytes: 1_073_741_824,
         timestamp: 1_740_000_000,
     }
+}
+
+// Move `LongStringRecord` definition above `long_string_payload` to ensure visibility
+#[derive(KJson, Debug)]
+pub struct LongStringRecord {
+    pub id: u64,
+    pub data: String,
 }
 
 fn long_string_payload(size: usize) -> LongStringRecord {
