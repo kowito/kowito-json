@@ -368,7 +368,7 @@ dependencies = [
 
 [[package]]
 name = "kowito-json"
-version = "0.2.19"
+version = "0.2.20"
 dependencies = [
  "criterion",
  "fxhash",
@@ -384,7 +384,7 @@ dependencies = [
 
 [[package]]
 name = "kowito-json-derive"
-version = "0.2.19"
+version = "0.2.20"
 dependencies = [
  "itoa",
  "proc-macro2",
